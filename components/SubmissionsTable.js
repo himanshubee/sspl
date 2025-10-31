@@ -17,12 +17,6 @@ const foodTypeLabels = {
   other: "Other",
 };
 
-const feeLabels = {
-  yes: "Payment YES",
-  no: "Payment NO",
-  other: "Other",
-};
-
 function formatValue(primary, other, labels) {
   if (labels && primary && labels[primary]) {
     return other ? other : labels[primary];
@@ -65,11 +59,6 @@ function buildExportRows(submissions) {
       submission.foodType,
       submission.foodTypeOther,
       foodTypeLabels,
-    ),
-    "Fee Response": formatValue(
-      submission.feeResponse,
-      submission.feeResponseOther,
-      feeLabels,
     ),
     "Photo URL": resolveDownloadUrl(
       submission.photoUrl ?? submission.photo ?? "",
@@ -171,7 +160,6 @@ export default function SubmissionsTable({ submissions }) {
               <th className="px-4 py-3">T-Shirt</th>
               <th className="px-4 py-3">Jersey</th>
               <th className="px-4 py-3">Food</th>
-              <th className="px-4 py-3">Fee</th>
               <th className="px-4 py-3">Photo</th>
               <th className="px-4 py-3">Payment</th>
             </tr>
@@ -218,13 +206,6 @@ export default function SubmissionsTable({ submissions }) {
                       submission.foodType,
                       submission.foodTypeOther,
                       foodTypeLabels,
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {formatValue(
-                      submission.feeResponse,
-                      submission.feeResponseOther,
-                      feeLabels,
                     )}
                   </td>
                   <td className="px-4 py-3">

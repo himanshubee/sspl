@@ -27,23 +27,15 @@ const foodOptions = [
   { label: "Other", value: "other" },
 ];
 
-const feeOptions = [
-  { label: "Payment YES", value: "yes" },
-  { label: "Payment NO", value: "no" },
-  { label: "Other", value: "other" },
-];
-
 export default function Home() {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   async function handleSubmit(event) {
     event.preventDefault();
     setIsSubmitting(true);
-    setMessage("");
     setError("");
 
     const form = event.currentTarget;
@@ -60,12 +52,6 @@ export default function Home() {
       const foodTypeOther = formData.get("foodTypeOther");
       if (foodType === "other" && !foodTypeOther) {
         throw new Error("Please specify your food preference.");
-      }
-
-      const feeResponse = formData.get("feeResponse");
-      const feeResponseOther = formData.get("feeResponseOther");
-      if (feeResponse === "other" && !feeResponseOther) {
-        throw new Error("Please describe your fee status.");
       }
 
       const paymentFile = formData.get("paymentScreenshot");
@@ -311,39 +297,6 @@ export default function Home() {
                 ))}
               </fieldset>
 
-              <fieldset className="grid gap-4 rounded-xl border border-slate-200 p-4">
-                <legend className="text-sm font-semibold text-slate-700">
-                  Payment Confirmation <span className="text-emerald-600">*</span>
-                </legend>
-                <p className="text-sm text-slate-500">
-                  OCR verification checks for ₹900 in your screenshot. If OCR fails we
-                  will ask you to try again.
-                </p>
-                {feeOptions.map((option) => (
-                  <label
-                    key={option.value}
-                    className="flex items-center gap-2 text-sm text-slate-700"
-                  >
-                    <input
-                      type="radio"
-                      name="feeResponse"
-                      value={option.value}
-                      required
-                      className="h-4 w-4 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    {option.label}
-                    {option.value === "other" && (
-                      <input
-                        type="text"
-                        name="feeResponseOther"
-                        className="ml-2 flex-1 rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        placeholder="Please specify"
-                      />
-                    )}
-                  </label>
-                ))}
-              </fieldset>
-
               <div className="grid gap-6 md:grid-cols-2">
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-slate-700">
@@ -386,12 +339,6 @@ export default function Home() {
                 </p>
               )}
 
-              {message && (
-                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-                  {message}
-                </p>
-              )}
-
               <div className="flex justify-end">
                 <button
                   type="submit"
@@ -403,12 +350,6 @@ export default function Home() {
               </div>
             </form>
           </section>
-        )}
-
-        {message && !showForm && (
-          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm text-emerald-700">
-            {message}
-          </p>
         )}
       </div>
     </div>

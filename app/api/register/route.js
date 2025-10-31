@@ -152,8 +152,6 @@ export async function POST(request) {
   const jerseyNumber = formData.get("jerseyNumber")?.toString().trim();
   const foodType = formData.get("foodType")?.toString();
   const foodTypeOther = formData.get("foodTypeOther")?.toString().trim();
-  const feeResponse = formData.get("feeResponse")?.toString();
-  const feeResponseOther = formData.get("feeResponseOther")?.toString().trim();
   const photo = formData.get("photo");
   const paymentScreenshot = formData.get("paymentScreenshot");
 
@@ -165,7 +163,6 @@ export async function POST(request) {
     !jerseyName ||
     !jerseyNumber ||
     !foodType ||
-    !feeResponse ||
     !(photo instanceof File) ||
     !(paymentScreenshot instanceof File)
   ) {
@@ -199,13 +196,6 @@ export async function POST(request) {
   if (foodType === "other" && !foodTypeOther) {
     return NextResponse.json(
       { error: "Please specify your food preference." },
-      { status: 400 },
-    );
-  }
-
-  if (feeResponse === "other" && !feeResponseOther) {
-    return NextResponse.json(
-      { error: "Please describe your fee status." },
       { status: 400 },
     );
   }
@@ -268,8 +258,6 @@ export async function POST(request) {
       jerseyNumber,
       foodType,
       foodTypeOther: foodType === "other" ? foodTypeOther : "",
-      feeResponse,
-      feeResponseOther: feeResponse === "other" ? feeResponseOther : "",
       photoKey,
       photoContentType: compressedPhoto.contentType,
       paymentScreenshotKey: paymentKey,
