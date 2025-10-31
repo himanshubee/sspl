@@ -31,9 +31,26 @@ function formatValue(primary, other, labels) {
   return primary;
 }
 
+function formatTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toISOString().replace("T", " ").replace("Z", " UTC");
+}
+
+function resolveDownloadUrl(url) {
+  if (!url) return "";
+  try {
+    return new URL(url, window.location.origin).href;
+  } catch {
+    return url;
+  }
+}
+
 function buildExportRows(submissions) {
   return submissions.map((submission) => ({
-    "Submitted At": new Date(submission.createdAt).toLocaleString(),
+    "Submitted At": formatTimestamp(submission.createdAt),
     Name: submission.name,
     Address: submission.address,
     "Player Type": formatValue(
@@ -54,12 +71,14 @@ function buildExportRows(submissions) {
       submission.feeResponseOther,
       feeLabels,
     ),
-    "Photo URL": submission.photo
-      ? new URL(submission.photo, window.location.origin).href
-      : "",
-    "Payment Screenshot URL": submission.paymentScreenshot
-      ? new URL(submission.paymentScreenshot, window.location.origin).href
-      : "",
+    "Photo URL": resolveDownloadUrl(
+      submission.photoUrl ?? submission.photo ?? "",
+    ),
+    "Payment Screenshot URL": resolveDownloadUrl(
+      submission.paymentUrl ??
+        submission.paymentScreenshot ??
+        "",
+    ),
     "Submission ID": submission.id,
   }));
 }
@@ -172,7 +191,7 @@ export default function SubmissionsTable({ submissions }) {
               submissions.map((submission) => (
                 <tr key={submission.id} className="align-top">
                   <td className="px-4 py-3 text-xs text-slate-500">
-                    {new Date(submission.createdAt).toLocaleString()}
+                    {formatTimestamp(submission.createdAt)}
                   </td>
                   <td className="px-4 py-3 font-semibold text-slate-900">
                     {submission.name}
@@ -209,13 +228,13 @@ export default function SubmissionsTable({ submissions }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {submission.photo ? (
+                    {submission.photoUrl || submission.photo ? (
                       <button
                         type="button"
                         onClick={() =>
                           setModal({
                             title: "Player Photo",
-                            url: submission.photo,
+                            url: submission.photoUrl ?? submission.photo,
                             submission,
                           })
                         }
@@ -228,13 +247,15 @@ export default function SubmissionsTable({ submissions }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {submission.paymentScreenshot ? (
+                    {submission.paymentUrl || submission.paymentScreenshot ? (
                       <button
                         type="button"
                         onClick={() =>
                           setModal({
                             title: "Payment Screenshot",
-                            url: submission.paymentScreenshot,
+                            url:
+                              submission.paymentUrl ??
+                              submission.paymentScreenshot,
                             submission,
                           })
                         }

@@ -74,6 +74,12 @@
       "regex": "^/favicon\\.ico(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/thank-you",
+      "regex": "^/thank\\-you(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/thank\\-you(?:/)?$"
     }
   ],
   "dataRoutes": [],

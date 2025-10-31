@@ -1,44 +1,75 @@
 import { NextResponse } from "next/server";
-import path from "path";
-import { promises as fs } from "fs";
 import crypto from "crypto";
 import { Blob } from "buffer";
+import sharp from "sharp";
 import { addSubmission } from "@/lib/storage";
+import { uploadObject } from "@/lib/objectStorage";
 
-const photosDir = path.join(process.cwd(), "public", "uploads", "photos");
-const paymentsDir = path.join(process.cwd(), "public", "uploads", "payments");
 const OCR_API_ENDPOINT =
   process.env.OCR_SPACE_ENDPOINT ?? "https://api.ocr.space/parse/image";
 
-async function ensureDirectories() {
-  await fs.mkdir(photosDir, { recursive: true });
-  await fs.mkdir(paymentsDir, { recursive: true });
+const MAX_IMAGE_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB
+const JPEG_MIME_TYPE = "image/jpeg";
+const MAX_RESIZE_WIDTH = 1600;
+const MIN_RESIZE_WIDTH = 640;
+
+function sanitizeFilename(filename) {
+  return filename?.replace(/[^a-z0-9.\-_]/gi, "_").toLowerCase() || "upload";
 }
 
-async function saveFile(file, targetDir, providedBuffer) {
-  if (!(file instanceof File)) {
-    return null;
+function ensureJpegFilename(filename, fallbackBase) {
+  const base = sanitizeFilename(filename).replace(/\.[^.]+$/, "") || fallbackBase;
+  return `${base}.jpg`;
+}
+
+function buildStorageKey(folder, filename) {
+  const safeName = sanitizeFilename(filename);
+  const uniquePrefix = `${Date.now()}-${crypto.randomUUID()}`;
+  return `${folder}/${uniquePrefix}-${safeName}`;
+}
+
+function isImageFile(file) {
+  const mime = file?.type?.toLowerCase();
+  if (mime?.startsWith("image/")) {
+    return true;
   }
-  const buffer =
-    providedBuffer ?? Buffer.from(await file.arrayBuffer());
 
-  const safeName = file.name.replace(/[^a-z0-9.\-_]/gi, "_").toLowerCase();
-  const filename = `${Date.now()}-${safeName || "upload"}`;
-  const fullPath = path.join(targetDir, filename);
-  await fs.writeFile(fullPath, buffer);
+  const name = file?.name?.toLowerCase() ?? "";
+  return /\.(jpg|jpeg|png|webp|heic|heif|gif)$/.test(name);
+}
 
-  const publicPath = path.join(
-    "/uploads",
-    path.basename(targetDir),
-    filename,
-  );
+async function compressImage(buffer) {
+  let quality = 80;
+  let width = MAX_RESIZE_WIDTH;
+  let output = await sharp(buffer)
+    .rotate()
+    .resize({ width, withoutEnlargement: true })
+    .jpeg({ quality })
+    .toBuffer();
 
-  return {
-    filename,
-    publicPath,
-    fullPath,
-    size: buffer.length,
-  };
+  while (output.length > MAX_IMAGE_SIZE_BYTES && quality > 40) {
+    quality -= 10;
+    output = await sharp(buffer)
+      .rotate()
+      .resize({ width, withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  while (output.length > MAX_IMAGE_SIZE_BYTES && width > MIN_RESIZE_WIDTH) {
+    width = Math.max(MIN_RESIZE_WIDTH, Math.round(width * 0.8));
+    output = await sharp(buffer)
+      .rotate()
+      .resize({ width, withoutEnlargement: true })
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  if (output.length > MAX_IMAGE_SIZE_BYTES) {
+    throw new Error("Unable to compress image under 1 MB.");
+  }
+
+  return { buffer: output, contentType: JPEG_MIME_TYPE };
 }
 
 async function runOcrSpace(buffer, originalFilename, mimeType) {
@@ -54,11 +85,9 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
   formData.append("scale", "true");
   formData.append("OCREngine", "5");
 
-  const sanitizedName =
-    originalFilename?.replace(/[^a-z0-9.\-_]/gi, "_").toLowerCase() ||
-    "payment.jpg";
+  const sanitizedName = ensureJpegFilename(originalFilename, "payment");
   const blob = new Blob([buffer], {
-    type: mimeType || "application/octet-stream",
+    type: mimeType || JPEG_MIME_TYPE,
   });
   formData.append("file", blob, sanitizedName);
 
@@ -112,7 +141,6 @@ function paymentLooksValid(text) {
 }
 
 export async function POST(request) {
-  await ensureDirectories();
   const formData = await request.formData();
 
   const name = formData.get("name")?.toString().trim();
@@ -129,8 +157,6 @@ export async function POST(request) {
   const photo = formData.get("photo");
   const paymentScreenshot = formData.get("paymentScreenshot");
 
-  const maxUploadSize = 10 * 1024 * 1024; // 10 MB
-
   if (
     !name ||
     !address ||
@@ -144,8 +170,22 @@ export async function POST(request) {
     !(paymentScreenshot instanceof File)
   ) {
     return NextResponse.json(
-      { error: "Please complete all required fields." },
+      { error: "Please complete all required fields with valid uploads." },
       { status: 400 },
+    );
+  }
+
+  if (!isImageFile(photo) || !isImageFile(paymentScreenshot)) {
+    return NextResponse.json(
+      { error: "Only image files are accepted for photo and payment proof." },
+      { status: 400 },
+    );
+  }
+
+  if (photo.size > MAX_IMAGE_SIZE_BYTES || paymentScreenshot.size > MAX_IMAGE_SIZE_BYTES) {
+    return NextResponse.json(
+      { error: "Images must be 1 MB or smaller." },
+      { status: 413 },
     );
   }
 
@@ -170,22 +210,18 @@ export async function POST(request) {
     );
   }
 
-  if (photo.size > maxUploadSize || paymentScreenshot.size > maxUploadSize) {
-    return NextResponse.json(
-      { error: "Uploads must be 10 MB or smaller." },
-      { status: 413 },
-    );
-  }
-
   try {
+    const photoBuffer = Buffer.from(await photo.arrayBuffer());
     const paymentBuffer = Buffer.from(await paymentScreenshot.arrayBuffer());
 
+    const compressedPhoto = await compressImage(photoBuffer);
+    const compressedPayment = await compressImage(paymentBuffer);
+
     const text = await runOcrSpace(
-      paymentBuffer,
+      compressedPayment.buffer,
       paymentScreenshot.name,
-      paymentScreenshot.type,
+      compressedPayment.contentType,
     );
-    console.log("OCR output:", text);
 
     if (!paymentLooksValid(text)) {
       return NextResponse.json(
@@ -197,12 +233,28 @@ export async function POST(request) {
       );
     }
 
-    const savedPhoto = await saveFile(photo, photosDir);
-    const savedPayment = await saveFile(
-      paymentScreenshot,
-      paymentsDir,
-      paymentBuffer,
-    );
+    const photoKey = await uploadObject({
+      key: buildStorageKey("photos", ensureJpegFilename(photo.name, "photo")),
+      body: compressedPhoto.buffer,
+      contentType: compressedPhoto.contentType,
+      metadata: {
+        originalname: sanitizeFilename(photo.name || "photo"),
+        originaltype: photo.type || "",
+      },
+    });
+
+    const paymentKey = await uploadObject({
+      key: buildStorageKey(
+        "payments",
+        ensureJpegFilename(paymentScreenshot.name, "payment"),
+      ),
+      body: compressedPayment.buffer,
+      contentType: compressedPayment.contentType,
+      metadata: {
+        originalname: sanitizeFilename(paymentScreenshot.name || "payment"),
+        originaltype: paymentScreenshot.type || "",
+      },
+    });
 
     const submission = {
       id: crypto.randomUUID(),
@@ -218,8 +270,10 @@ export async function POST(request) {
       foodTypeOther: foodType === "other" ? foodTypeOther : "",
       feeResponse,
       feeResponseOther: feeResponse === "other" ? feeResponseOther : "",
-      photo: savedPhoto?.publicPath,
-      paymentScreenshot: savedPayment?.publicPath,
+      photoKey,
+      photoContentType: compressedPhoto.contentType,
+      paymentScreenshotKey: paymentKey,
+      paymentContentType: compressedPayment.contentType,
       ocrText: text,
     };
 
@@ -231,9 +285,13 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error("Registration error", error);
+    const message =
+      error instanceof Error ? error.message : "Unexpected upload error.";
+    const status =
+      message === "Unable to compress image under 1 MB." ? 413 : 500;
     return NextResponse.json(
-      { error: "Something went wrong while processing the registration." },
-      { status: 500 },
+      { error: status === 413 ? message : "Something went wrong while processing the registration." },
+      { status },
     );
   }
 }

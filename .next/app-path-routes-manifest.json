@@ -7,5 +7,6 @@
   "/api/logout/route": "/api/logout",
   "/api/register/route": "/api/register",
   "/favicon.ico/route": "/favicon.ico",
-  "/page": "/"
+  "/page": "/",
+  "/thank-you/page": "/thank-you"
 }

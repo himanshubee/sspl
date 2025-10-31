@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 const playerOptions = [
@@ -33,6 +34,7 @@ const feeOptions = [
 ];
 
 export default function Home() {
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
@@ -67,13 +69,13 @@ export default function Home() {
       }
 
       const paymentFile = formData.get("paymentScreenshot");
-      if (paymentFile instanceof File && paymentFile.size > 10 * 1024 * 1024) {
-        throw new Error("Payment screenshot must be under 10 MB.");
+      if (paymentFile instanceof File && paymentFile.size > 1 * 1024 * 1024) {
+        throw new Error("Payment screenshot must be under 1 MB.");
       }
 
       const photoFile = formData.get("photo");
-      if (photoFile instanceof File && photoFile.size > 10 * 1024 * 1024) {
-        throw new Error("Player photo must be under 10 MB.");
+      if (photoFile instanceof File && photoFile.size > 1 * 1024 * 1024) {
+        throw new Error("Player photo must be under 1 MB.");
       }
 
       const response = await fetch("/api/register", {
@@ -88,10 +90,9 @@ export default function Home() {
       }
 
       form.reset();
-      setMessage(
-        "Registration received! Your payment screenshot passed OCR verification.",
-      );
       setShowForm(false);
+      router.push("/thank-you");
+      return;
     } catch (submissionError) {
       setError(
         submissionError instanceof Error
@@ -356,7 +357,7 @@ export default function Home() {
                     className="text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-emerald-500"
                   />
                   <span className="text-xs text-slate-500">
-                    Upload a recent portrait photo (max 10 MB).
+                    Upload a recent portrait photo (max 1 MB).
                   </span>
                 </label>
 
@@ -374,6 +375,7 @@ export default function Home() {
                   />
                   <span className="text-xs text-slate-500">
                     Make sure the ₹900 amount and successful status are clearly visible.
+                    File must be under 1 MB.
                   </span>
                 </label>
               </div>

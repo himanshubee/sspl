@@ -40,7 +40,13 @@
         "search": ""
       }
     ],
-    "remotePatterns": [],
+    "remotePatterns": [
+      {
+        "protocol": "https",
+        "hostname": "^(?:^(?:s3\\.us\\-east\\-005\\.backblazeb2\\.com)$)$",
+        "pathname": "^(?:\\/(?!\\.{1,2}(?:\\/|$))(?:(?:(?!(?:^|\\/)\\.{1,2}(?:\\/|$)).)*?))$"
+      }
+    ],
     "qualities": [
       75
     ],
