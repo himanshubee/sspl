@@ -52,9 +52,7 @@ function LoginContent() {
         <h1 className="text-2xl font-semibold text-slate-900">
           Admin Login
         </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Enter the credentials configured in <code>.env.local</code>.
-        </p>
+       
 
         <label className="mt-6 flex flex-col gap-2 text-sm text-slate-700">
           Username
