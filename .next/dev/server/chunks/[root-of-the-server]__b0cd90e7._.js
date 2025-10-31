@@ -368,11 +368,9 @@ async function POST(request) {
     const jerseyNumber = formData.get("jerseyNumber")?.toString().trim();
     const foodType = formData.get("foodType")?.toString();
     const foodTypeOther = formData.get("foodTypeOther")?.toString().trim();
-    const feeResponse = formData.get("feeResponse")?.toString();
-    const feeResponseOther = formData.get("feeResponseOther")?.toString().trim();
     const photo = formData.get("photo");
     const paymentScreenshot = formData.get("paymentScreenshot");
-    if (!name || !address || !playerType || !tshirtSize || !jerseyName || !jerseyNumber || !foodType || !feeResponse || !(photo instanceof File) || !(paymentScreenshot instanceof File)) {
+    if (!name || !address || !playerType || !tshirtSize || !jerseyName || !jerseyNumber || !foodType || !(photo instanceof File) || !(paymentScreenshot instanceof File)) {
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
             error: "Please complete all required fields with valid uploads."
         }, {
@@ -403,13 +401,6 @@ async function POST(request) {
     if (foodType === "other" && !foodTypeOther) {
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
             error: "Please specify your food preference."
-        }, {
-            status: 400
-        });
-    }
-    if (feeResponse === "other" && !feeResponseOther) {
-        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-            error: "Please describe your fee status."
         }, {
             status: 400
         });
@@ -457,8 +448,6 @@ async function POST(request) {
             jerseyNumber,
             foodType,
             foodTypeOther: foodType === "other" ? foodTypeOther : "",
-            feeResponse,
-            feeResponseOther: feeResponse === "other" ? feeResponseOther : "",
             photoKey,
             photoContentType: compressedPhoto.contentType,
             paymentScreenshotKey: paymentKey,
