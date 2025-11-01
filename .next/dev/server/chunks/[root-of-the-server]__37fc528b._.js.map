@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 46, "column": 0}, "map": {"version":3,"sources":["file:///Users/himanshuverma/Documents/GitHub/sspl/app/api/logout/route.js"],"sourcesContent":["import { NextResponse } from \"next/server\";\n\nconst COOKIE_NAME = \"admin_session\";\n\nexport async function POST() {\n  const response = NextResponse.json({ success: true });\n  response.cookies.set({\n    name: COOKIE_NAME,\n    value: \"\",\n    path: \"/\",\n    maxAge: 0,\n  });\n  return response;\n}\n"],"names":[],"mappings":";;;;AAAA;;AAEA,MAAM,cAAc;AAEb,eAAe;IACpB,MAAM,WAAW,gJAAY,CAAC,IAAI,CAAC;QAAE,SAAS;IAAK;IACnD,SAAS,OAAO,CAAC,GAAG,CAAC;QACnB,MAAM;QACN,OAAO;QACP,MAAM;QACN,QAAQ;IACV;IACA,OAAO;AACT","debugId":null}}]
-}

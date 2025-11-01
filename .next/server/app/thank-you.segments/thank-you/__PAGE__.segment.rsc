@@ -1,6 +1,0 @@
-1:"$Sreact.fragment"
-2:I[5500,["/_next/static/chunks/778368eaec0c0c00.js"],"Image"]
-3:I[97367,["/_next/static/chunks/ff1a16fafef87110.js","/_next/static/chunks/247eb132b7f7b574.js"],"OutletBoundary"]
-4:"$Sreact.suspense"
-0:{"buildId":"A0as4VnCGP-Hyz6zjakjA","rsc":["$","$1","c",{"children":[["$","div",null,{"className":"min-h-screen bg-slate-100 py-12","children":["$","div",null,{"className":"mx-auto flex w-full max-w-3xl flex-col items-center gap-8 rounded-3xl bg-white p-10 text-center shadow-lg","children":[["$","$L2",null,{"src":"/sspl-2026.png","alt":"SSPL Season 2026 logo","width":120,"height":120,"className":"h-24 w-24","priority":true}],["$","h1",null,{"className":"text-3xl font-bold text-slate-900","children":"Registration Submitted!"}],["$","p",null,{"className":"max-w-xl text-base text-slate-600","children":"Thank you for registering for SSPL Season 2026. We've received your details and payment screenshot. The team will review your submission and contact you soon if anything else is needed."}]]}]}],[["$","script","script-0",{"src":"/_next/static/chunks/778368eaec0c0c00.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"loading":null,"isPartial":false}
-5:null
