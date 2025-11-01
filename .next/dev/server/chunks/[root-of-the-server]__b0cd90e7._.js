@@ -243,7 +243,8 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$objectStorage$2e$js__
 ;
 ;
 const OCR_API_ENDPOINT = process.env.OCR_SPACE_ENDPOINT ?? "https://api.ocr.space/parse/image";
-const MAX_IMAGE_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_COMPRESSED_SIZE_BYTES = 1 * 1024 * 1024; // 1 MB
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const JPEG_MIME_TYPE = "image/jpeg";
 const MAX_RESIZE_WIDTH = 1600;
 const MIN_RESIZE_WIDTH = 640;
@@ -276,7 +277,7 @@ async function compressImage(buffer) {
     }).jpeg({
         quality
     }).toBuffer();
-    while(output.length > MAX_IMAGE_SIZE_BYTES && quality > 40){
+    while(output.length > MAX_COMPRESSED_SIZE_BYTES && quality > 40){
         quality -= 10;
         output = await (0, __TURBOPACK__imported__module__$5b$externals$5d2f$sharp__$5b$external$5d$__$28$sharp$2c$__cjs$29$__["default"])(buffer).rotate().resize({
             width,
@@ -285,7 +286,7 @@ async function compressImage(buffer) {
             quality
         }).toBuffer();
     }
-    while(output.length > MAX_IMAGE_SIZE_BYTES && width > MIN_RESIZE_WIDTH){
+    while(output.length > MAX_COMPRESSED_SIZE_BYTES && width > MIN_RESIZE_WIDTH){
         width = Math.max(MIN_RESIZE_WIDTH, Math.round(width * 0.8));
         output = await (0, __TURBOPACK__imported__module__$5b$externals$5d2f$sharp__$5b$external$5d$__$28$sharp$2c$__cjs$29$__["default"])(buffer).rotate().resize({
             width,
@@ -294,7 +295,7 @@ async function compressImage(buffer) {
             quality
         }).toBuffer();
     }
-    if (output.length > MAX_IMAGE_SIZE_BYTES) {
+    if (output.length > MAX_COMPRESSED_SIZE_BYTES) {
         throw new Error("Unable to compress image under 1 MB.");
     }
     return {
@@ -307,6 +308,11 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
     if (!apiKey) {
         throw new Error("OCR_SPACE_API_KEY is not configured.");
     }
+    console.log("[Registration] Starting OCR request", JSON.stringify({
+        endpoint: OCR_API_ENDPOINT,
+        filename: originalFilename,
+        payloadBytes: buffer.length
+    }));
     const formData = new FormData();
     formData.append("apikey", apiKey);
     formData.append("language", "eng");
@@ -320,19 +326,46 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
         type: mimeType || JPEG_MIME_TYPE
     });
     formData.append("file", blob, sanitizedName);
-    const response = await fetch(OCR_API_ENDPOINT, {
-        method: "POST",
-        body: formData
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=>controller.abort(), 20000);
+    let response;
+    try {
+        response = await fetch(OCR_API_ENDPOINT, {
+            method: "POST",
+            body: formData,
+            signal: controller.signal
+        });
+    } catch (fetchError) {
+        console.error("[Registration] OCR request failed to send", fetchError);
+        throw new Error("Failed to reach the OCR service. Please try again.");
+    } finally{
+        clearTimeout(timeoutId);
+    }
+    console.log("[Registration] OCR response status", JSON.stringify({
+        status: response.status,
+        statusText: response.statusText
+    }));
     if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("[Registration] OCR non-OK response body", errorBody);
         throw new Error(`OCR request failed with status ${response.status} ${response.statusText}`);
     }
     const payload = await response.json();
+    console.log("[Registration] OCR payload snapshot", JSON.stringify({
+        isErrored: payload.IsErroredOnProcessing,
+        errorMessage: payload.ErrorMessage,
+        parsedResultsCount: payload.ParsedResults?.length ?? 0
+    }));
     if (payload.IsErroredOnProcessing) {
         const message = Array.isArray(payload.ErrorMessage) ? payload.ErrorMessage.join("; ") : payload.ErrorMessage || "OCR processing failed.";
+        console.error("[Registration] OCR reported processing error", message);
         throw new Error(message);
     }
     const text = payload.ParsedResults?.map((r)=>r.ParsedText).join("\n") ?? "";
+    console.log("[Registration] OCR text preview", JSON.stringify({
+        length: text.length,
+        snippet: text.slice(0, 200)
+    }));
     return text;
 }
 function paymentLooksValid(text) {
@@ -355,7 +388,36 @@ function paymentLooksValid(text) {
         /\bamount\s*:?\.?\s*900(?:\.00)?\b/,
         /\bamount\s*:?\.?\s*rs\.?\s*900(?:\.00)?\b/
     ];
-    return patterns.some((regex)=>regex.test(sanitized));
+    const patternHit = patterns.some((regex)=>regex.test(sanitized));
+    if (patternHit) {
+        console.log("[Registration] OCR regex matched 900");
+        return true;
+    }
+    const amounts = extractCandidateAmounts(zeroFriendly);
+    console.log("[Registration] OCR extracted amounts", JSON.stringify({
+        amounts
+    }));
+    return amounts.some((amount)=>Math.abs(amount - 900) <= 1);
+}
+function extractCandidateAmounts(text) {
+    const amounts = [];
+    const currencyRegex = /(?:₹|rs\.?|inr\.?|amount|paid|payment|total)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)/gi;
+    let match;
+    while((match = currencyRegex.exec(text)) !== null){
+        const raw = match[1].replace(/,/g, "");
+        const value = Number.parseFloat(raw);
+        if (!Number.isNaN(value)) {
+            amounts.push(value);
+        }
+    }
+    const plainNumberRegex = /\b([0-9]{2,6})(?:[.,][0-9]{2})?\b/g;
+    while((match = plainNumberRegex.exec(text)) !== null){
+        const value = Number.parseFloat(match[1]);
+        if (!Number.isNaN(value)) {
+            amounts.push(value);
+        }
+    }
+    return amounts;
 }
 async function POST(request) {
     const formData = await request.formData();
@@ -384,9 +446,9 @@ async function POST(request) {
             status: 400
         });
     }
-    if (photo.size > MAX_IMAGE_SIZE_BYTES || paymentScreenshot.size > MAX_IMAGE_SIZE_BYTES) {
+    if (photo.size > MAX_UPLOAD_SIZE_BYTES || paymentScreenshot.size > MAX_UPLOAD_SIZE_BYTES) {
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-            error: "Images must be 1 MB or smaller."
+            error: "Images must be 10 MB or smaller before upload."
         }, {
             status: 413
         });
@@ -408,10 +470,21 @@ async function POST(request) {
     try {
         const photoBuffer = Buffer.from(await photo.arrayBuffer());
         const paymentBuffer = Buffer.from(await paymentScreenshot.arrayBuffer());
+        console.log("[Registration] Raw upload sizes", JSON.stringify({
+            photoBytes: photoBuffer.length,
+            paymentBytes: paymentBuffer.length
+        }));
         const compressedPhoto = await compressImage(photoBuffer);
         const compressedPayment = await compressImage(paymentBuffer);
+        console.log("[Registration] Compressed sizes", JSON.stringify({
+            photoBytes: compressedPhoto.buffer.length,
+            paymentBytes: compressedPayment.buffer.length
+        }));
         const text = await runOcrSpace(compressedPayment.buffer, paymentScreenshot.name, compressedPayment.contentType);
         if (!paymentLooksValid(text)) {
+            console.warn("[Registration] OCR could not validate 900 payment", JSON.stringify({
+                ocrTextSnippet: text.slice(0, 200)
+            }));
             return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
                 error: "Unable to confirm the ₹900 payment from the screenshot. Please ensure the amount is clearly visible."
             }, {

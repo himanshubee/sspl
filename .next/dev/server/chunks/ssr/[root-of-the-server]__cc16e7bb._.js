@@ -103,12 +103,12 @@ function Home() {
                 throw new Error("Please specify your food preference.");
             }
             const paymentFile = formData.get("paymentScreenshot");
-            if (paymentFile instanceof File && paymentFile.size > 1 * 1024 * 1024) {
-                throw new Error("Payment screenshot must be under 1 MB.");
+            if (paymentFile instanceof File && paymentFile.size > 10 * 1024 * 1024) {
+                throw new Error("Payment screenshot must be under 10 MB.");
             }
             const photoFile = formData.get("photo");
-            if (photoFile instanceof File && photoFile.size > 1 * 1024 * 1024) {
-                throw new Error("Player photo must be under 1 MB.");
+            if (photoFile instanceof File && photoFile.size > 10 * 1024 * 1024) {
+                throw new Error("Player photo must be under 10 MB.");
             }
             const response = await fetch("/api/register", {
                 method: "POST",
@@ -678,7 +678,7 @@ function Home() {
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                 className: "text-xs text-slate-500",
-                                                children: "Upload a recent portrait photo (max 1 MB)."
+                                                children: "Upload a recent portrait photo (max 10 MB). We compress it to 1 MB before storage."
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.js",
                                                 lineNumber: 312,
@@ -703,13 +703,13 @@ function Home() {
                                                         children: "*"
                                                     }, void 0, false, {
                                                         fileName: "[project]/app/page.js",
-                                                        lineNumber: 320,
+                                                        lineNumber: 321,
                                                         columnNumber: 21
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/app/page.js",
-                                                lineNumber: 318,
+                                                lineNumber: 319,
                                                 columnNumber: 19
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -720,21 +720,21 @@ function Home() {
                                                 className: "text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-emerald-500"
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.js",
-                                                lineNumber: 322,
+                                                lineNumber: 323,
                                                 columnNumber: 19
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                 className: "text-xs text-slate-500",
-                                                children: "Make sure the ₹900 amount and successful status are clearly visible. File must be under 1 MB."
+                                                children: "Make sure the ₹900 amount and successful status are clearly visible. File must be under 10 MB; we compress it to 1 MB automatically."
                                             }, void 0, false, {
                                                 fileName: "[project]/app/page.js",
-                                                lineNumber: 329,
+                                                lineNumber: 330,
                                                 columnNumber: 19
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/app/page.js",
-                                        lineNumber: 317,
+                                        lineNumber: 318,
                                         columnNumber: 17
                                     }, this)
                                 ]
@@ -748,7 +748,7 @@ function Home() {
                                 children: error
                             }, void 0, false, {
                                 fileName: "[project]/app/page.js",
-                                lineNumber: 337,
+                                lineNumber: 338,
                                 columnNumber: 17
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -760,12 +760,12 @@ function Home() {
                                     children: isSubmitting ? "Submitting..." : "Submit Registration"
                                 }, void 0, false, {
                                     fileName: "[project]/app/page.js",
-                                    lineNumber: 343,
+                                    lineNumber: 344,
                                     columnNumber: 17
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/app/page.js",
-                                lineNumber: 342,
+                                lineNumber: 343,
                                 columnNumber: 15
                             }, this)
                         ]
