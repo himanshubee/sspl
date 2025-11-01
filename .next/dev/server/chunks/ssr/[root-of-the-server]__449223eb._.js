@@ -43,8 +43,8 @@ __turbopack_context__.s([
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/server/route-modules/app-page/vendored/ssr/react-jsx-dev-runtime.js [app-ssr] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$image$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/image.js [app-ssr] (ecmascript)");
-var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/xlsx/xlsx.mjs [app-ssr] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/server/route-modules/app-page/vendored/ssr/react.js [app-ssr] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/xlsx/xlsx.mjs [app-ssr] (ecmascript)");
 "use client";
 ;
 ;
@@ -93,36 +93,123 @@ function buildExportRows(submissions) {
             "Jersey Name": submission.jerseyName,
             "Jersey Number": submission.jerseyNumber,
             "Food Preference": formatValue(submission.foodType, submission.foodTypeOther, foodTypeLabels),
-            "Photo URL": resolveDownloadUrl(submission.photoUrl ?? submission.photo ?? ""),
-            "Payment Screenshot URL": resolveDownloadUrl(submission.paymentUrl ?? submission.paymentScreenshot ?? ""),
+            "Photo URL": resolveDownloadUrl(submission.photoDownloadUrl ?? submission.photoUrl ?? submission.photo ?? ""),
+            "Payment Screenshot URL": resolveDownloadUrl(submission.paymentDownloadUrl ?? submission.paymentUrl ?? submission.paymentScreenshot ?? ""),
             "Submission ID": submission.id
         }));
 }
 function SubmissionsTable({ submissions }) {
     const [modal, setModal] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(null);
-    function handleDownload() {
-        if (!submissions?.length) return;
-        const rows = buildExportRows(submissions);
-        const worksheet = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].json_to_sheet(rows);
-        const workbook = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].book_new();
-        __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].book_append_sheet(workbook, worksheet, "Submissions");
-        const excelBuffer = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["write"](workbook, {
-            type: "array",
-            bookType: "xlsx"
+    const [isDownloading, setIsDownloading] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
+    async function fetchSignedAttachment(key) {
+        const response = await fetch(`/api/admin/signed-url?key=${encodeURIComponent(key)}`);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch signed URL (${response.status})`);
+        }
+        const payload = await response.json();
+        if (!payload?.url) {
+            throw new Error("Signed URL payload missing url field");
+        }
+        return payload.url;
+    }
+    async function openAttachment(submission, type) {
+        const title = type === "photo" ? "Player Photo" : "Payment Screenshot";
+        const fallback = type === "photo" ? submission.photo : submission.paymentScreenshot;
+        const storageKey = type === "photo" ? submission.photoKey : submission.paymentScreenshotKey;
+        if (fallback) {
+            setModal({
+                title,
+                submission,
+                url: resolveDownloadUrl(fallback),
+                loading: false,
+                error: null
+            });
+            return;
+        }
+        if (!storageKey) {
+            setModal({
+                title,
+                submission,
+                url: null,
+                loading: false,
+                error: "Attachment is not available for this submission."
+            });
+            return;
+        }
+        setModal({
+            title,
+            submission,
+            url: null,
+            loading: true,
+            error: null
         });
-        const blob = new Blob([
-            excelBuffer
-        ], {
-            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `sspl-submissions-${Date.now()}.xlsx`;
-        anchor.click();
-        setTimeout(()=>{
-            URL.revokeObjectURL(url);
-        }, 2000);
+        try {
+            const signedUrl = await fetchSignedAttachment(storageKey);
+            setModal({
+                title,
+                submission,
+                url: resolveDownloadUrl(signedUrl),
+                loading: false,
+                error: null
+            });
+        } catch (error) {
+            console.error("[Admin] Failed to load attachment", error);
+            setModal({
+                title,
+                submission,
+                url: null,
+                loading: false,
+                error: "Unable to load the attachment. Please try again."
+            });
+        }
+    }
+    async function handleDownload() {
+        if (!submissions?.length || isDownloading) return;
+        setIsDownloading(true);
+        try {
+            const enhanced = await Promise.all(submissions.map(async (submission)=>{
+                const photoDownloadUrl = submission.photo ? resolveDownloadUrl(submission.photo) : submission.photoKey ? await fetchSignedAttachment(submission.photoKey).catch((error)=>{
+                    console.error("[Admin] Failed to sign photo for export", error);
+                    return "";
+                }) : "";
+                const paymentDownloadUrl = submission.paymentScreenshot ? resolveDownloadUrl(submission.paymentScreenshot) : submission.paymentScreenshotKey ? await fetchSignedAttachment(submission.paymentScreenshotKey).catch((error)=>{
+                    console.error("[Admin] Failed to sign payment screenshot for export", error);
+                    return "";
+                }) : "";
+                return {
+                    ...submission,
+                    photoDownloadUrl,
+                    paymentDownloadUrl
+                };
+            }));
+            const rows = buildExportRows(enhanced);
+            const worksheet = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].json_to_sheet(rows);
+            const workbook = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].book_new();
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["utils"].book_append_sheet(workbook, worksheet, "Submissions");
+            const excelBuffer = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$xlsx$2f$xlsx$2e$mjs__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["write"](workbook, {
+                type: "array",
+                bookType: "xlsx"
+            });
+            const blob = new Blob([
+                excelBuffer
+            ], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = `sspl-submissions-${Date.now()}.xlsx`;
+            anchor.click();
+            setTimeout(()=>{
+                URL.revokeObjectURL(url);
+            }, 2000);
+        } catch (error) {
+            console.error("[Admin] Failed to prepare export", error);
+            if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+            ;
+        } finally{
+            setIsDownloading(false);
+        }
     }
     return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
         className: "space-y-4",
@@ -139,7 +226,7 @@ function SubmissionsTable({ submissions }) {
                             children: "Close"
                         }, void 0, false, {
                             fileName: "[project]/components/SubmissionsTable.js",
-                            lineNumber: 106,
+                            lineNumber: 231,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -150,7 +237,7 @@ function SubmissionsTable({ submissions }) {
                                     children: modal.title
                                 }, void 0, false, {
                                     fileName: "[project]/components/SubmissionsTable.js",
-                                    lineNumber: 114,
+                                    lineNumber: 239,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -163,7 +250,7 @@ function SubmissionsTable({ submissions }) {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 118,
+                                            lineNumber: 243,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -174,18 +261,32 @@ function SubmissionsTable({ submissions }) {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 119,
+                                            lineNumber: 244,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/components/SubmissionsTable.js",
-                                    lineNumber: 117,
+                                    lineNumber: 242,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("figure", {
                                     className: "flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4",
-                                    children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$image$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
+                                    children: modal.loading ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: "flex h-64 w-full items-center justify-center text-sm text-slate-500",
+                                        children: "Loading attachment…"
+                                    }, void 0, false, {
+                                        fileName: "[project]/components/SubmissionsTable.js",
+                                        lineNumber: 251,
+                                        columnNumber: 19
+                                    }, this) : modal.error ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                                        className: "flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600",
+                                        children: modal.error
+                                    }, void 0, false, {
+                                        fileName: "[project]/components/SubmissionsTable.js",
+                                        lineNumber: 255,
+                                        columnNumber: 19
+                                    }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$image$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["default"], {
                                         src: modal.url,
                                         alt: modal.title,
                                         width: 800,
@@ -193,29 +294,29 @@ function SubmissionsTable({ submissions }) {
                                         className: "h-auto w-full max-h-[70vh] rounded-lg object-contain"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 125,
-                                        columnNumber: 17
+                                        lineNumber: 259,
+                                        columnNumber: 19
                                     }, this)
                                 }, void 0, false, {
                                     fileName: "[project]/components/SubmissionsTable.js",
-                                    lineNumber: 124,
+                                    lineNumber: 249,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/components/SubmissionsTable.js",
-                            lineNumber: 113,
+                            lineNumber: 238,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/components/SubmissionsTable.js",
-                    lineNumber: 105,
+                    lineNumber: 230,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/SubmissionsTable.js",
-                lineNumber: 104,
+                lineNumber: 229,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -232,24 +333,24 @@ function SubmissionsTable({ submissions }) {
                         ]
                     }, void 0, true, {
                         fileName: "[project]/components/SubmissionsTable.js",
-                        lineNumber: 138,
+                        lineNumber: 273,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                         type: "button",
-                        onClick: handleDownload,
-                        disabled: !submissions.length,
+                        onClick: ()=>void handleDownload(),
+                        disabled: !submissions.length || isDownloading,
                         className: "inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300",
-                        children: "Download Excel"
+                        children: isDownloading ? "Preparing…" : "Download Excel"
                     }, void 0, false, {
                         fileName: "[project]/components/SubmissionsTable.js",
-                        lineNumber: 142,
+                        lineNumber: 277,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/components/SubmissionsTable.js",
-                lineNumber: 137,
+                lineNumber: 272,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -267,7 +368,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Submitted"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 156,
+                                        lineNumber: 291,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -275,7 +376,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Name"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 157,
+                                        lineNumber: 292,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -283,7 +384,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Address"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 158,
+                                        lineNumber: 293,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -291,7 +392,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Player Type"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 159,
+                                        lineNumber: 294,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -299,7 +400,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "T-Shirt"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 160,
+                                        lineNumber: 295,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -307,7 +408,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Jersey"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 161,
+                                        lineNumber: 296,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -315,7 +416,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Food"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 162,
+                                        lineNumber: 297,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -323,7 +424,7 @@ function SubmissionsTable({ submissions }) {
                                         children: "Photo"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 163,
+                                        lineNumber: 298,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -331,18 +432,18 @@ function SubmissionsTable({ submissions }) {
                                         children: "Payment"
                                     }, void 0, false, {
                                         fileName: "[project]/components/SubmissionsTable.js",
-                                        lineNumber: 164,
+                                        lineNumber: 299,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/components/SubmissionsTable.js",
-                                lineNumber: 155,
+                                lineNumber: 290,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/components/SubmissionsTable.js",
-                            lineNumber: 154,
+                            lineNumber: 289,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
@@ -354,12 +455,12 @@ function SubmissionsTable({ submissions }) {
                                     children: "No submissions yet. Registrations will appear here once players complete the form."
                                 }, void 0, false, {
                                     fileName: "[project]/components/SubmissionsTable.js",
-                                    lineNumber: 170,
+                                    lineNumber: 305,
                                     columnNumber: 17
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/components/SubmissionsTable.js",
-                                lineNumber: 169,
+                                lineNumber: 304,
                                 columnNumber: 15
                             }, this) : submissions.map((submission)=>/*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("tr", {
                                     className: "align-top",
@@ -369,7 +470,7 @@ function SubmissionsTable({ submissions }) {
                                             children: formatTimestamp(submission.createdAt)
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 181,
+                                            lineNumber: 316,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -377,7 +478,7 @@ function SubmissionsTable({ submissions }) {
                                             children: submission.name
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 184,
+                                            lineNumber: 319,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -385,7 +486,7 @@ function SubmissionsTable({ submissions }) {
                                             children: submission.address
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 187,
+                                            lineNumber: 322,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -393,7 +494,7 @@ function SubmissionsTable({ submissions }) {
                                             children: formatValue(submission.playerType, submission.playerTypeOther, playerTypeLabels)
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 190,
+                                            lineNumber: 325,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -401,7 +502,7 @@ function SubmissionsTable({ submissions }) {
                                             children: submission.tshirtSize
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 197,
+                                            lineNumber: 332,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -411,7 +512,7 @@ function SubmissionsTable({ submissions }) {
                                                     children: submission.jerseyName
                                                 }, void 0, false, {
                                                     fileName: "[project]/components/SubmissionsTable.js",
-                                                    lineNumber: 199,
+                                                    lineNumber: 334,
                                                     columnNumber: 21
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -422,13 +523,13 @@ function SubmissionsTable({ submissions }) {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/components/SubmissionsTable.js",
-                                                    lineNumber: 200,
+                                                    lineNumber: 335,
                                                     columnNumber: 21
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 198,
+                                            lineNumber: 333,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -436,91 +537,83 @@ function SubmissionsTable({ submissions }) {
                                             children: formatValue(submission.foodType, submission.foodTypeOther, foodTypeLabels)
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 204,
+                                            lineNumber: 339,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
                                             className: "px-4 py-3",
-                                            children: submission.photoUrl || submission.photo ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                            children: submission.photoKey || submission.photo ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                                                 type: "button",
-                                                onClick: ()=>setModal({
-                                                        title: "Player Photo",
-                                                        url: submission.photoUrl ?? submission.photo,
-                                                        submission
-                                                    }),
+                                                onClick: ()=>void openAttachment(submission, "photo"),
                                                 className: "text-emerald-600 hover:text-emerald-500",
                                                 children: "View photo"
                                             }, void 0, false, {
                                                 fileName: "[project]/components/SubmissionsTable.js",
-                                                lineNumber: 213,
+                                                lineNumber: 348,
                                                 columnNumber: 23
                                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                 className: "text-slate-400",
                                                 children: "—"
                                             }, void 0, false, {
                                                 fileName: "[project]/components/SubmissionsTable.js",
-                                                lineNumber: 227,
+                                                lineNumber: 356,
                                                 columnNumber: 23
                                             }, this)
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 211,
+                                            lineNumber: 346,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
                                             className: "px-4 py-3",
-                                            children: submission.paymentUrl || submission.paymentScreenshot ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
+                                            children: submission.paymentScreenshotKey || submission.paymentScreenshot ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
                                                 type: "button",
-                                                onClick: ()=>setModal({
-                                                        title: "Payment Screenshot",
-                                                        url: submission.paymentUrl ?? submission.paymentScreenshot,
-                                                        submission
-                                                    }),
+                                                onClick: ()=>void openAttachment(submission, "payment"),
                                                 className: "text-emerald-600 hover:text-emerald-500",
                                                 children: "View payment"
                                             }, void 0, false, {
                                                 fileName: "[project]/components/SubmissionsTable.js",
-                                                lineNumber: 232,
+                                                lineNumber: 362,
                                                 columnNumber: 23
                                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                 className: "text-slate-400",
                                                 children: "—"
                                             }, void 0, false, {
                                                 fileName: "[project]/components/SubmissionsTable.js",
-                                                lineNumber: 248,
+                                                lineNumber: 372,
                                                 columnNumber: 23
                                             }, this)
                                         }, void 0, false, {
                                             fileName: "[project]/components/SubmissionsTable.js",
-                                            lineNumber: 230,
+                                            lineNumber: 359,
                                             columnNumber: 19
                                         }, this)
                                     ]
                                 }, submission.id, true, {
                                     fileName: "[project]/components/SubmissionsTable.js",
-                                    lineNumber: 180,
+                                    lineNumber: 315,
                                     columnNumber: 17
                                 }, this))
                         }, void 0, false, {
                             fileName: "[project]/components/SubmissionsTable.js",
-                            lineNumber: 167,
+                            lineNumber: 302,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/components/SubmissionsTable.js",
-                    lineNumber: 153,
+                    lineNumber: 288,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/components/SubmissionsTable.js",
-                lineNumber: 152,
+                lineNumber: 287,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/components/SubmissionsTable.js",
-        lineNumber: 102,
+        lineNumber: 227,
         columnNumber: 5
     }, this);
 }

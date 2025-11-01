@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import * as XLSX from "xlsx";
 import { useState } from "react";
+import * as XLSX from "xlsx";
 
 const playerTypeLabels = {
   batsman: "Batsman",
@@ -61,10 +61,14 @@ function buildExportRows(submissions) {
       foodTypeLabels,
     ),
     "Photo URL": resolveDownloadUrl(
-      submission.photoUrl ?? submission.photo ?? "",
+      submission.photoDownloadUrl ??
+        submission.photoUrl ??
+        submission.photo ??
+        "",
     ),
     "Payment Screenshot URL": resolveDownloadUrl(
-      submission.paymentUrl ??
+      submission.paymentDownloadUrl ??
+        submission.paymentUrl ??
         submission.paymentScreenshot ??
         "",
     ),
@@ -74,28 +78,149 @@ function buildExportRows(submissions) {
 
 export default function SubmissionsTable({ submissions }) {
   const [modal, setModal] = useState(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  function handleDownload() {
-    if (!submissions?.length) return;
-    const rows = buildExportRows(submissions);
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Submissions");
-    const excelBuffer = XLSX.write(workbook, {
-      type: "array",
-      bookType: "xlsx",
+  async function fetchSignedAttachment(key) {
+    const response = await fetch(
+      `/api/admin/signed-url?key=${encodeURIComponent(key)}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to fetch signed URL (${response.status})`);
+    }
+    const payload = await response.json();
+    if (!payload?.url) {
+      throw new Error("Signed URL payload missing url field");
+    }
+    return payload.url;
+  }
+
+  async function openAttachment(submission, type) {
+    const title = type === "photo" ? "Player Photo" : "Payment Screenshot";
+    const fallback =
+      type === "photo" ? submission.photo : submission.paymentScreenshot;
+    const storageKey =
+      type === "photo"
+        ? submission.photoKey
+        : submission.paymentScreenshotKey;
+
+    if (fallback) {
+      setModal({
+        title,
+        submission,
+        url: resolveDownloadUrl(fallback),
+        loading: false,
+        error: null,
+      });
+      return;
+    }
+
+    if (!storageKey) {
+      setModal({
+        title,
+        submission,
+        url: null,
+        loading: false,
+        error: "Attachment is not available for this submission.",
+      });
+      return;
+    }
+
+    setModal({
+      title,
+      submission,
+      url: null,
+      loading: true,
+      error: null,
     });
-    const blob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `sspl-submissions-${Date.now()}.xlsx`;
-    anchor.click();
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 2000);
+
+    try {
+      const signedUrl = await fetchSignedAttachment(storageKey);
+      setModal({
+        title,
+        submission,
+        url: resolveDownloadUrl(signedUrl),
+        loading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("[Admin] Failed to load attachment", error);
+      setModal({
+        title,
+        submission,
+        url: null,
+        loading: false,
+        error: "Unable to load the attachment. Please try again.",
+      });
+    }
+  }
+
+  async function handleDownload() {
+    if (!submissions?.length || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const enhanced = await Promise.all(
+        submissions.map(async (submission) => {
+          const photoDownloadUrl = submission.photo
+            ? resolveDownloadUrl(submission.photo)
+            : submission.photoKey
+              ? await fetchSignedAttachment(submission.photoKey).catch(
+                  (error) => {
+                    console.error(
+                      "[Admin] Failed to sign photo for export",
+                      error,
+                    );
+                    return "";
+                  },
+                )
+              : "";
+          const paymentDownloadUrl = submission.paymentScreenshot
+            ? resolveDownloadUrl(submission.paymentScreenshot)
+            : submission.paymentScreenshotKey
+              ? await fetchSignedAttachment(
+                  submission.paymentScreenshotKey,
+                ).catch((error) => {
+                  console.error(
+                    "[Admin] Failed to sign payment screenshot for export",
+                    error,
+                  );
+                  return "";
+                })
+              : "";
+          return {
+            ...submission,
+            photoDownloadUrl,
+            paymentDownloadUrl,
+          };
+        }),
+      );
+
+      const rows = buildExportRows(enhanced);
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Submissions");
+      const excelBuffer = XLSX.write(workbook, {
+        type: "array",
+        bookType: "xlsx",
+      });
+      const blob = new Blob([excelBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `sspl-submissions-${Date.now()}.xlsx`;
+      anchor.click();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 2000);
+    } catch (error) {
+      console.error("[Admin] Failed to prepare export", error);
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert("Unable to prepare the export. Please try again.");
+      }
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
   return (
@@ -122,13 +247,23 @@ export default function SubmissionsTable({ submissions }) {
                 </span>
               </div>
               <figure className="flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <Image
-                  src={modal.url}
-                  alt={modal.title}
-                  width={800}
-                  height={800}
-                  className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
-                />
+                {modal.loading ? (
+                  <div className="flex h-64 w-full items-center justify-center text-sm text-slate-500">
+                    Loading attachment…
+                  </div>
+                ) : modal.error ? (
+                  <div className="flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600">
+                    {modal.error}
+                  </div>
+                ) : (
+                  <Image
+                    src={modal.url}
+                    alt={modal.title}
+                    width={800}
+                    height={800}
+                    className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
+                  />
+                )}
               </figure>
             </div>
           </div>
@@ -141,11 +276,11 @@ export default function SubmissionsTable({ submissions }) {
         </p>
         <button
           type="button"
-          onClick={handleDownload}
-          disabled={!submissions.length}
+          onClick={() => void handleDownload()}
+          disabled={!submissions.length || isDownloading}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300"
         >
-          Download Excel
+          {isDownloading ? "Preparing…" : "Download Excel"}
         </button>
       </div>
 
@@ -209,16 +344,10 @@ export default function SubmissionsTable({ submissions }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {submission.photoUrl || submission.photo ? (
+                    {submission.photoKey || submission.photo ? (
                       <button
                         type="button"
-                        onClick={() =>
-                          setModal({
-                            title: "Player Photo",
-                            url: submission.photoUrl ?? submission.photo,
-                            submission,
-                          })
-                        }
+                        onClick={() => void openAttachment(submission, "photo")}
                         className="text-emerald-600 hover:text-emerald-500"
                       >
                         View photo
@@ -228,17 +357,12 @@ export default function SubmissionsTable({ submissions }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {submission.paymentUrl || submission.paymentScreenshot ? (
+                    {submission.paymentScreenshotKey ||
+                    submission.paymentScreenshot ? (
                       <button
                         type="button"
                         onClick={() =>
-                          setModal({
-                            title: "Payment Screenshot",
-                            url:
-                              submission.paymentUrl ??
-                              submission.paymentScreenshot,
-                            submission,
-                          })
+                          void openAttachment(submission, "payment")
                         }
                         className="text-emerald-600 hover:text-emerald-500"
                       >

@@ -29,6 +29,7 @@
   :root, :host {
     --color-red-50: #fef2f2;
     --color-red-200: #ffcaca;
+    --color-red-600: #e40014;
     --color-red-700: #bf000f;
     --color-emerald-300: #5ee9b5;
     --color-emerald-500: #00bb7f;
@@ -88,6 +89,7 @@
     :root, :host {
       --color-red-50: lab(96.5005% 4.18508 1.52328);
       --color-red-200: lab(86.017% 19.8815 7.75869);
+      --color-red-600: lab(48.4493% 77.4328 61.5452);
       --color-red-700: lab(40.4273% 67.2623 53.7441);
       --color-emerald-300: lab(83.9203% -48.7124 13.8849);
       --color-emerald-500: lab(66.9756% -58.27 19.5419);
@@ -421,6 +423,10 @@
 
   .h-24 {
     height: calc(var(--spacing) * 24);
+  }
+
+  .h-64 {
+    height: calc(var(--spacing) * 64);
   }
 
   .h-auto {
@@ -787,6 +793,10 @@
 
   .text-emerald-600 {
     color: var(--color-emerald-600);
+  }
+
+  .text-red-600 {
+    color: var(--color-red-600);
   }
 
   .text-red-700 {

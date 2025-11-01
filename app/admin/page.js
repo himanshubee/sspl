@@ -2,34 +2,11 @@ import Image from "next/image";
 import LogoutButton from "@/components/LogoutButton";
 import SubmissionsTable from "@/components/SubmissionsTable";
 import { readSubmissions } from "@/lib/storage";
-import { getSignedObjectUrl } from "@/lib/objectStorage";
 
 export const dynamic = "force-dynamic";
 
-async function attachSignedUrls(submission) {
-  const enhanced = { ...submission };
-  if (submission.photoKey) {
-    enhanced.photoUrl = await getSignedObjectUrl(submission.photoKey);
-  } else if (submission.photo) {
-    enhanced.photoUrl = submission.photo;
-  }
-
-  if (submission.paymentScreenshotKey) {
-    enhanced.paymentUrl = await getSignedObjectUrl(
-      submission.paymentScreenshotKey,
-    );
-  } else if (submission.paymentScreenshot) {
-    enhanced.paymentUrl = submission.paymentScreenshot;
-  }
-
-  return enhanced;
-}
-
 export default async function AdminDashboard() {
   const submissions = await readSubmissions();
-  const submissionsWithUrls = await Promise.all(
-    submissions.map((submission) => attachSignedUrls(submission)),
-  );
 
   return (
     <div className="min-h-screen bg-slate-100 py-10">
@@ -56,7 +33,7 @@ export default async function AdminDashboard() {
           <LogoutButton />
         </header>
 
-        <SubmissionsTable submissions={submissionsWithUrls} />
+        <SubmissionsTable submissions={submissions} />
       </div>
     </div>
   );
