@@ -42,7 +42,7 @@ function resolveDownloadUrl(url) {
   }
 }
 
-function buildExportRows(submissions) {
+function buildExportRows(submissions, variant) {
   return submissions.map((submission) => ({
     "Submitted At": formatTimestamp(submission.createdAt),
     Name: submission.name,
@@ -72,11 +72,32 @@ function buildExportRows(submissions) {
         submission.paymentScreenshot ??
         "",
     ),
+    "Entry Type": variant === "failed" ? "Failed" : "Successful",
+    "Payment Verified":
+      submission.ocrPaymentDetected === true
+        ? "Yes"
+        : submission.ocrPaymentDetected === false
+          ? "No"
+          : "Unknown",
+    "OCR Candidate Amounts": Array.isArray(submission.ocrCandidateAmounts)
+      ? submission.ocrCandidateAmounts.join(", ")
+      : "",
+    "OCR Reasons": Array.isArray(submission.ocrValidationReasons)
+      ? submission.ocrValidationReasons.join(", ")
+      : "",
+    "Secondary Amounts Detected": Array.isArray(
+      submission.ocrSecondaryAmounts,
+    )
+      ? submission.ocrSecondaryAmounts.join(", ")
+      : "",
+    "OCR Text": submission.ocrText ?? "",
+    "Failure Reason": submission.failureReason ?? "",
+    "Failure Message": submission.failureMessage ?? "",
     "Submission ID": submission.id,
   }));
 }
 
-export default function SubmissionsTable({ submissions }) {
+export default function SubmissionsTable({ submissions, variant = "successful" }) {
   const [modal, setModal] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -105,6 +126,7 @@ export default function SubmissionsTable({ submissions }) {
 
     if (fallback) {
       setModal({
+        type: "image",
         title,
         submission,
         url: resolveDownloadUrl(fallback),
@@ -116,6 +138,7 @@ export default function SubmissionsTable({ submissions }) {
 
     if (!storageKey) {
       setModal({
+        type: "image",
         title,
         submission,
         url: null,
@@ -126,6 +149,7 @@ export default function SubmissionsTable({ submissions }) {
     }
 
     setModal({
+      type: "image",
       title,
       submission,
       url: null,
@@ -136,6 +160,7 @@ export default function SubmissionsTable({ submissions }) {
     try {
       const signedUrl = await fetchSignedAttachment(storageKey);
       setModal({
+        type: "image",
         title,
         submission,
         url: resolveDownloadUrl(signedUrl),
@@ -145,6 +170,7 @@ export default function SubmissionsTable({ submissions }) {
     } catch (error) {
       console.error("[Admin] Failed to load attachment", error);
       setModal({
+        type: "image",
         title,
         submission,
         url: null,
@@ -152,6 +178,18 @@ export default function SubmissionsTable({ submissions }) {
         error: "Unable to load the attachment. Please try again.",
       });
     }
+  }
+
+  function handleViewOcr(submission) {
+    setModal({
+      type: "text",
+      title: "OCR Extract",
+      submission,
+      text: submission.ocrText || "No OCR text was saved with this submission.",
+      amounts: submission.ocrCandidateAmounts ?? [],
+      reasons: submission.ocrValidationReasons ?? [],
+      secondary: submission.ocrSecondaryAmounts ?? [],
+    });
   }
 
   async function handleDownload() {
@@ -194,10 +232,11 @@ export default function SubmissionsTable({ submissions }) {
         }),
       );
 
-      const rows = buildExportRows(enhanced);
+      const rows = buildExportRows(enhanced, variant);
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Submissions");
+      const sheetName = variant === "failed" ? "Failed Submissions" : "Submissions";
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
       const excelBuffer = XLSX.write(workbook, {
         type: "array",
         bookType: "xlsx",
@@ -208,7 +247,9 @@ export default function SubmissionsTable({ submissions }) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `sspl-submissions-${Date.now()}.xlsx`;
+      const filenamePrefix =
+        variant === "failed" ? "sspl-failed-submissions" : "sspl-submissions";
+      anchor.download = `${filenamePrefix}-${Date.now()}.xlsx`;
       anchor.click();
       setTimeout(() => {
         URL.revokeObjectURL(url);
@@ -246,32 +287,61 @@ export default function SubmissionsTable({ submissions }) {
                   {new Date(modal.submission.createdAt).toLocaleString()}
                 </span>
               </div>
-              <figure className="flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-                {modal.loading ? (
-                  <div className="flex h-64 w-full items-center justify-center text-sm text-slate-500">
-                    Loading attachment…
+              {modal.type === "image" ? (
+                <figure className="flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  {modal.loading ? (
+                    <div className="flex h-64 w-full items-center justify-center text-sm text-slate-500">
+                      Loading attachment…
+                    </div>
+                  ) : modal.error ? (
+                    <div className="flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600">
+                      {modal.error}
+                    </div>
+                  ) : (
+                    <Image
+                      src={modal.url}
+                      alt={modal.title}
+                      width={800}
+                      height={800}
+                      className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
+                    />
+                  )}
+                </figure>
+              ) : (
+                <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-600">
+                    {Array.isArray(modal.amounts) && modal.amounts.length > 0 ? (
+                      <span>
+                        Candidate amounts detected: {modal.amounts.join(", ")}
+                      </span>
+                    ) : (
+                      <span>No numeric amounts detected during OCR.</span>
+                    )}
                   </div>
-                ) : modal.error ? (
-                  <div className="flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600">
-                    {modal.error}
-                  </div>
-                ) : (
-                  <Image
-                    src={modal.url}
-                    alt={modal.title}
-                    width={800}
-                    height={800}
-                    className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
-                  />
-                )}
-              </figure>
+                  {Array.isArray(modal.reasons) && modal.reasons.length > 0 && (
+                    <div className="text-xs font-medium uppercase tracking-wide text-emerald-700">
+                      Matched rules: {modal.reasons.join(", ")}
+                    </div>
+                  )}
+                  {Array.isArray(modal.secondary) &&
+                    modal.secondary.length > 0 && (
+                      <div className="text-xs text-amber-600">
+                        Secondary amounts detected: {modal.secondary.join(", ")}
+                      </div>
+                    )}
+                  <pre className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm text-slate-700 shadow-inner">
+                    {modal.text}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-600">
-          Showing {submissions.length} record
+          Showing {submissions.length}{" "}
+          {variant === "failed" ? "failed submission" : "record"}
           {submissions.length !== 1 ? "s" : ""}.
         </p>
         <button
@@ -280,7 +350,11 @@ export default function SubmissionsTable({ submissions }) {
           disabled={!submissions.length || isDownloading}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300"
         >
-          {isDownloading ? "Preparing…" : "Download Excel"}
+          {isDownloading
+            ? "Preparing…"
+            : variant === "failed"
+              ? "Download Failed Excel"
+              : "Download Excel"}
         </button>
       </div>
 
@@ -297,6 +371,10 @@ export default function SubmissionsTable({ submissions }) {
               <th className="px-4 py-3">Food</th>
               <th className="px-4 py-3">Photo</th>
               <th className="px-4 py-3">Payment</th>
+              <th className="px-4 py-3">Payment OCR</th>
+              {variant === "failed" && (
+                <th className="px-4 py-3">Failure Reason</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white text-sm text-slate-700">
@@ -304,7 +382,7 @@ export default function SubmissionsTable({ submissions }) {
               <tr>
                 <td
                   className="px-4 py-6 text-center text-slate-500"
-                  colSpan={10}
+                  colSpan={variant === "failed" ? 11 : 10}
                 >
                   No submissions yet. Registrations will appear here once
                   players complete the form.
@@ -372,6 +450,61 @@ export default function SubmissionsTable({ submissions }) {
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="text-sm">
+                      {submission.ocrPaymentDetected === true ? (
+                        <span className="font-semibold text-emerald-600">
+                          Verified
+                        </span>
+                      ) : submission.ocrPaymentDetected === false ? (
+                        <span className="font-semibold text-amber-600">
+                          Needs review
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Unknown</span>
+                      )}
+                    </div>
+                    {Array.isArray(submission.ocrValidationReasons) &&
+                      submission.ocrValidationReasons.length > 0 && (
+                        <div className="text-xs text-slate-500">
+                          {submission.ocrValidationReasons.join(", ")}
+                        </div>
+                      )}
+                    {submission.ocrText ? (
+                      <button
+                        type="button"
+                        onClick={() => handleViewOcr(submission)}
+                        className="mt-1 text-xs font-medium text-emerald-600 hover:text-emerald-500"
+                      >
+                        View OCR text
+                      </button>
+                    ) : (
+                      <div className="mt-1 text-xs text-slate-400">
+                        No OCR text
+                      </div>
+                    )}
+                    {Array.isArray(submission.ocrSecondaryAmounts) &&
+                      submission.ocrSecondaryAmounts.length > 0 && (
+                        <div className="mt-1 text-xs text-amber-600">
+                          Secondary amounts:{" "}
+                          {submission.ocrSecondaryAmounts.join(", ")}
+                        </div>
+                      )}
+                  </td>
+                  {variant === "failed" && (
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-amber-600">
+                        {submission.failureReason
+                          ? submission.failureReason.replace(/_/g, " ")
+                          : "Unknown"}
+                      </div>
+                      {submission.failureMessage ? (
+                        <div className="text-xs text-slate-500">
+                          {submission.failureMessage}
+                        </div>
+                      ) : null}
+                    </td>
+                  )}
                 </tr>
               ))
             )}

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { Blob } from "buffer";
 import sharp from "sharp";
-import { addSubmission } from "@/lib/storage";
+import { addSubmission, addFailedSubmission } from "@/lib/storage";
+import { buildPaymentValidationSummary } from "@/lib/paymentValidation";
 import { uploadObject } from "@/lib/objectStorage";
 
 const OCR_API_ENDPOINT =
@@ -93,7 +94,7 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
   formData.append("language", "eng");
   formData.append("isOverlayRequired", "false");
   formData.append("scale", "true");
-  formData.append("OCREngine", "5");
+  formData.append("OCREngine", "2");
 
   const sanitizedName = ensureJpegFilename(originalFilename, "payment");
   const blob = new Blob([buffer], {
@@ -159,67 +160,6 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
   );
 
   return text;
-}
-
-function paymentLooksValid(text) {
-  if (!text) return false;
-  const normalized = text.toLowerCase();
-  const zeroFriendly = normalized.replace(/o/g, "0");
-  const digitsOnly = zeroFriendly.replace(/[^0-9]/g, "");
-  if (digitsOnly.includes("900")) {
-    return true;
-  }
-
-  if (zeroFriendly.includes("₹900") || zeroFriendly.includes("rs 900")) {
-    return true;
-  }
-
-  const sanitized = zeroFriendly.replace(/[,₹]/g, "");
-  const patterns = [
-    /\b900(?:\.00)?\b/,
-    /\b900\/-\b/,
-    /\brs\.?\s*900(?:\.00)?\b/,
-    /\binr\.?\s*900(?:\.00)?\b/,
-    /\bamount\s*:?\.?\s*900(?:\.00)?\b/,
-    /\bamount\s*:?\.?\s*rs\.?\s*900(?:\.00)?\b/,
-  ];
-  const patternHit = patterns.some((regex) => regex.test(sanitized));
-  if (patternHit) {
-    console.log("[Registration] OCR regex matched 900");
-    return true;
-  }
-
-  const amounts = extractCandidateAmounts(zeroFriendly);
-  console.log(
-    "[Registration] OCR extracted amounts",
-    JSON.stringify({ amounts }),
-  );
-  return amounts.some((amount) => Math.abs(amount - 900) <= 1);
-}
-
-function extractCandidateAmounts(text) {
-  const amounts = [];
-  const currencyRegex =
-    /(?:₹|rs\.?|inr\.?|amount|paid|payment|total)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)/gi;
-
-  let match;
-  while ((match = currencyRegex.exec(text)) !== null) {
-    const raw = match[1].replace(/,/g, "");
-    const value = Number.parseFloat(raw);
-    if (!Number.isNaN(value)) {
-      amounts.push(value);
-    }
-  }
-
-  const plainNumberRegex = /\b([0-9]{2,6})(?:[.,][0-9]{2})?\b/g;
-  while ((match = plainNumberRegex.exec(text)) !== null) {
-    const value = Number.parseFloat(match[1]);
-    if (!Number.isNaN(value)) {
-      amounts.push(value);
-    }
-  }
-
-  return amounts;
 }
 
 export async function POST(request) {
@@ -312,11 +252,93 @@ export async function POST(request) {
       compressedPayment.contentType,
     );
 
-    if (!paymentLooksValid(text)) {
+    const validationSummary = buildPaymentValidationSummary(text);
+
+    if (!validationSummary.matched) {
       console.warn(
         "[Registration] OCR could not validate 900 payment",
-        JSON.stringify({ ocrTextSnippet: text.slice(0, 200) }),
+        JSON.stringify({
+          ocrTextSnippet: text.slice(0, 200),
+          candidateAmounts: validationSummary.amounts,
+        }),
       );
+
+      let failedPhotoKey = null;
+      let failedPaymentKey = null;
+
+      try {
+        failedPhotoKey = await uploadObject({
+          key: buildStorageKey(
+            "failed/photos",
+            ensureJpegFilename(photo.name, "photo"),
+          ),
+          body: compressedPhoto.buffer,
+          contentType: compressedPhoto.contentType,
+          metadata: {
+            originalname: sanitizeFilename(photo.name || "photo"),
+            originaltype: photo.type || "",
+          },
+        });
+      } catch (uploadError) {
+        console.error(
+          "[Registration] Failed to upload photo for failed submission",
+          uploadError,
+        );
+      }
+
+      try {
+        failedPaymentKey = await uploadObject({
+          key: buildStorageKey(
+            "failed/payments",
+            ensureJpegFilename(paymentScreenshot.name, "payment"),
+          ),
+          body: compressedPayment.buffer,
+          contentType: compressedPayment.contentType,
+          metadata: {
+            originalname: sanitizeFilename(paymentScreenshot.name || "payment"),
+            originaltype: paymentScreenshot.type || "",
+          },
+        });
+      } catch (uploadError) {
+        console.error(
+          "[Registration] Failed to upload payment screenshot for failed submission",
+          uploadError,
+        );
+      }
+
+      try {
+        await addFailedSubmission({
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          name,
+          address,
+          playerType,
+          playerTypeOther: playerType === "other" ? playerTypeOther : "",
+          tshirtSize,
+          jerseyName,
+          jerseyNumber,
+          foodType,
+          foodTypeOther: foodType === "other" ? foodTypeOther : "",
+          photoKey: failedPhotoKey,
+          photoContentType: compressedPhoto.contentType,
+          paymentScreenshotKey: failedPaymentKey,
+          paymentContentType: compressedPayment.contentType,
+          ocrText: text,
+          ocrPaymentDetected: false,
+          ocrCandidateAmounts: validationSummary.amounts,
+          ocrValidationReasons: validationSummary.reasons,
+          ocrSecondaryAmounts: validationSummary.secondaryAmounts,
+          failureReason: "payment_validation_failed",
+          failureMessage:
+            "OCR validation could not confirm the ₹900 payment amount.",
+        });
+      } catch (persistError) {
+        console.error(
+          "[Registration] Failed to persist failed submission record",
+          persistError,
+        );
+      }
+
       return NextResponse.json(
         {
           error:
@@ -366,6 +388,10 @@ export async function POST(request) {
       paymentScreenshotKey: paymentKey,
       paymentContentType: compressedPayment.contentType,
       ocrText: text,
+      ocrPaymentDetected: validationSummary.matched,
+      ocrCandidateAmounts: validationSummary.amounts,
+      ocrValidationReasons: validationSummary.reasons,
+      ocrSecondaryAmounts: validationSummary.secondaryAmounts,
     };
 
     await addSubmission(submission);
