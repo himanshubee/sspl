@@ -6,10 +6,22 @@ import { readFailedSubmissions, readSubmissions } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboard() {
-  const [submissions, failedSubmissions] = await Promise.all([
-    readSubmissions(),
-    readFailedSubmissions(),
-  ]);
+  let submissions = [];
+  let failedSubmissions = [];
+  let loadError = null;
+
+  try {
+    [submissions, failedSubmissions] = await Promise.all([
+      readSubmissions(),
+      readFailedSubmissions(),
+    ]);
+  } catch (error) {
+    console.error("[Admin] Failed to load submissions.", error);
+    loadError =
+      error instanceof Error
+        ? error.message || "Database connection failed."
+        : "Database connection failed.";
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 py-10">
@@ -39,6 +51,7 @@ export default async function AdminDashboard() {
         <AdminDashboardView
           submissions={submissions}
           failedSubmissions={failedSubmissions}
+          loadError={loadError}
         />
       </div>
     </div>

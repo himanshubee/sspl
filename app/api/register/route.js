@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { Blob } from "buffer";
 import sharp from "sharp";
-import { addSubmission, addFailedSubmission } from "@/lib/storage";
+import {
+  addSubmission,
+  addFailedSubmission,
+  countActiveSubmissions,
+} from "@/lib/storage";
 import { buildPaymentValidationSummary } from "@/lib/paymentValidation";
 import { uploadObject } from "@/lib/objectStorage";
+import { REGISTRATION_LIMIT } from "@/lib/constants";
 
 const OCR_API_ENDPOINT =
   process.env.OCR_SPACE_ENDPOINT ?? "https://api.ocr.space/parse/image";
@@ -163,6 +168,17 @@ async function runOcrSpace(buffer, originalFilename, mimeType) {
 }
 
 export async function POST(request) {
+  const activeCount = await countActiveSubmissions();
+  if (activeCount >= REGISTRATION_LIMIT) {
+    return NextResponse.json(
+      {
+        error:
+          "Registration is closed. We have reached the maximum number of players.",
+      },
+      { status: 409 },
+    );
+  }
+
   const formData = await request.formData();
 
   const name = formData.get("name")?.toString().trim();
@@ -253,6 +269,7 @@ export async function POST(request) {
     );
 
     const validationSummary = buildPaymentValidationSummary(text);
+    const payeeNameDetected = validationSummary.payeeNameDetected ?? false;
 
     if (!validationSummary.matched) {
       console.warn(
@@ -260,6 +277,7 @@ export async function POST(request) {
         JSON.stringify({
           ocrTextSnippet: text.slice(0, 200),
           candidateAmounts: validationSummary.amounts,
+          payeeNameDetected,
         }),
       );
 
@@ -328,9 +346,12 @@ export async function POST(request) {
           ocrCandidateAmounts: validationSummary.amounts,
           ocrValidationReasons: validationSummary.reasons,
           ocrMatchedAmount: validationSummary.matchedAmount ?? null,
-          failureReason: "payment_validation_failed",
-          failureMessage:
-            "OCR validation could not confirm the ₹900 payment amount.",
+          failureReason: payeeNameDetected
+            ? "payment_validation_failed"
+            : "payment_payee_missing",
+          failureMessage: payeeNameDetected
+            ? "OCR validation could not confirm the ₹900 payment amount."
+            : 'OCR validation could not find the expected payee name or transaction details (e.g., UTR) in the payment screenshot.',
         });
       } catch (persistError) {
         console.error(
@@ -342,7 +363,7 @@ export async function POST(request) {
       return NextResponse.json(
         {
           error:
-            "Unable to confirm the ₹900 payment from the screenshot. Please ensure the amount is clearly visible.",
+            "Unable to verify the payment. Please upload the correct screenshot showing the full transaction details (amount, payee name, UTR).",
         },
         { status: 422 },
       );
@@ -392,6 +413,7 @@ export async function POST(request) {
       ocrCandidateAmounts: validationSummary.amounts,
       ocrValidationReasons: validationSummary.reasons,
       ocrMatchedAmount: validationSummary.matchedAmount ?? null,
+      paymentValidated: true,
     };
 
     await addSubmission(submission);

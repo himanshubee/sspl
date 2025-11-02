@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
 
 const playerTypeLabels = {
@@ -95,13 +95,28 @@ function buildExportRows(submissions, variant) {
     "Entry Type": variant === "failed" ? "Failed" : "Successful",
     "Failure Reason": submission.failureReason ?? "",
     "Failure Message": submission.failureMessage ?? "",
+    "Payment Validated": submission.paymentValidated ? "Yes" : "No",
     "Submission ID": submission.id,
   }));
 }
 
-export default function SubmissionsTable({ submissions, variant = "successful" }) {
+export default function SubmissionsTable({
+  submissions,
+  variant = "successful",
+  onSubmissionApproved,
+  onSubmissionDeleted,
+  onSubmissionPaymentValidated,
+}) {
   const [modal, setModal] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [updatingPaymentId, setUpdatingPaymentId] = useState(null);
+  const [rows, setRows] = useState(submissions);
+
+  useEffect(() => {
+    setRows(submissions);
+  }, [submissions]);
 
   async function fetchSignedAttachment(key) {
     const directUrl = buildPublicObjectUrl(key);
@@ -188,11 +203,11 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
   }
 
   async function handleDownload() {
-    if (!submissions?.length || isDownloading) return;
+    if (!rows?.length || isDownloading) return;
     setIsDownloading(true);
     try {
       const enhanced = await Promise.all(
-        submissions.map(async (submission) => {
+        rows.map(async (submission) => {
           const photoDownloadUrl = submission.photo
             ? resolveDownloadUrl(submission.photo)
             : submission.photoKey
@@ -259,6 +274,192 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
     }
   }
 
+  async function handleApprove(submission) {
+    if (!submission?.id || approvingId) return;
+
+    setApprovingId(submission.id);
+    try {
+      const response = await fetch("/api/admin/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: submission.id }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          payload?.error ??
+          `Failed to approve submission (${response.status}).`;
+        throw new Error(message);
+      }
+
+      const approvedSubmission = payload?.submission;
+      if (!approvedSubmission) {
+        throw new Error(
+          "Approval response is missing submission data. Please refresh and try again.",
+        );
+      }
+
+      onSubmissionApproved?.(approvedSubmission);
+      setRows((prev) =>
+        prev.filter((row) => row.id !== submission.id),
+      );
+    } catch (error) {
+      console.error("[Admin] Failed to approve submission", error);
+      setRows((prev) => {
+        const exists = prev.some((row) => row.id === submission.id);
+        if (exists) return prev;
+        return [submission, ...prev];
+      });
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to approve the submission. Please try again.",
+        );
+      }
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function handleDelete(submission) {
+    if (!submission?.id || deletingId) return;
+
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Are you sure you want to remove this submission from the successful list?",
+      );
+      if (!confirmed) return;
+    }
+
+    setDeletingId(submission.id);
+    setRows((prev) =>
+      prev.filter((row) => row.id !== submission.id),
+    );
+    try {
+      const response = await fetch("/api/admin/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: submission.id }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          payload?.error ??
+          `Failed to delete submission (${response.status}).`;
+        throw new Error(message);
+      }
+
+      onSubmissionDeleted?.(submission.id);
+    } catch (error) {
+      console.error("[Admin] Failed to delete submission", error);
+      setRows((prev) => {
+        const exists = prev.some((row) => row.id === submission.id);
+        if (exists) return prev;
+        return [submission, ...prev];
+      });
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to delete the submission. Please try again.",
+        );
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleTogglePaymentValidation(submission) {
+    if (!submission?.id || updatingPaymentId) return;
+
+    const nextValue = !submission.paymentValidated;
+    setUpdatingPaymentId(submission.id);
+    const previousValue = submission.paymentValidated ?? false;
+    const optimisticSubmission = {
+      ...submission,
+      paymentValidated: nextValue,
+    };
+    setRows((prev) =>
+      prev.map((row) =>
+        row.id === submission.id ? optimisticSubmission : row,
+      ),
+    );
+    onSubmissionPaymentValidated?.(optimisticSubmission);
+    try {
+      const response = await fetch("/api/admin/payment-validation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: submission.id, validated: nextValue }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          payload?.error ??
+          `Failed to update payment validation (${response.status}).`;
+        throw new Error(message);
+      }
+
+      const updatedSubmission =
+        payload?.submission ?? { ...submission, paymentValidated: nextValue };
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === submission.id ? updatedSubmission : row,
+        ),
+      );
+      onSubmissionPaymentValidated?.(updatedSubmission);
+    } catch (error) {
+      console.error("[Admin] Failed to update payment validation", error);
+      setRows((prev) =>
+        prev.map((row) =>
+          row.id === submission.id
+            ? { ...row, paymentValidated: previousValue }
+            : row,
+        ),
+      );
+      onSubmissionPaymentValidated?.({
+        ...submission,
+        paymentValidated: previousValue,
+      });
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(
+          error instanceof Error && error.message
+            ? error.message
+            : "Unable to update the payment validation. Please try again.",
+        );
+      }
+    } finally {
+      setUpdatingPaymentId(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {modal && (
@@ -307,14 +508,14 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-600">
-          Showing {submissions.length}{" "}
+          Showing {rows.length}{" "}
           {variant === "failed" ? "failed submission" : "record"}
-          {submissions.length !== 1 ? "s" : ""}.
+          {rows.length !== 1 ? "s" : ""}.
         </p>
         <button
           type="button"
           onClick={() => void handleDownload()}
-          disabled={!submissions.length || isDownloading}
+          disabled={!rows.length || isDownloading}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300"
         >
           {isDownloading
@@ -338,24 +539,33 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
               <th className="px-4 py-3">Food</th>
               <th className="px-4 py-3">Photo</th>
               <th className="px-4 py-3">Payment</th>
-              {variant === "failed" && (
-                <th className="px-4 py-3">Failure Reason</th>
-              )}
+              {variant === "failed" ? (
+                <>
+                  <th className="px-4 py-3">Failure Reason</th>
+                  <th className="px-4 py-3">Actions</th>
+                </>
+              ) : null}
+              {variant === "successful" ? (
+                <>
+                  <th className="px-4 py-3">Payment Status</th>
+                  <th className="px-4 py-3">Actions</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white text-sm text-slate-700">
-            {submissions.length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
                 <td
                   className="px-4 py-6 text-center text-slate-500"
-                  colSpan={variant === "failed" ? 10 : 9}
+                  colSpan={variant === "failed" ? 11 : 11}
                 >
                   No submissions yet. Registrations will appear here once
                   players complete the form.
                 </td>
               </tr>
             ) : (
-              submissions.map((submission) => (
+              rows.map((submission) => (
                 <tr key={submission.id} className="align-top">
                   <td className="px-4 py-3 text-xs text-slate-500">
                     {formatTimestamp(submission.createdAt)}
@@ -416,20 +626,91 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
-                  {variant === "failed" && (
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-amber-600">
-                        {submission.failureReason
-                          ? submission.failureReason.replace(/_/g, " ")
-                          : "Unknown"}
-                      </div>
-                      {submission.failureMessage ? (
-                        <div className="text-xs text-slate-500">
-                          {submission.failureMessage}
+                  {variant === "failed" ? (
+                    <>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-amber-600">
+                          {submission.failureReason
+                            ? submission.failureReason.replace(/_/g, " ")
+                            : "Unknown"}
                         </div>
-                      ) : null}
-                    </td>
-                  )}
+                        {submission.failureMessage ? (
+                          <div className="text-xs text-slate-500">
+                            {submission.failureMessage}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleApprove(submission)}
+                          disabled={approvingId === submission.id}
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        >
+                          {approvingId === submission.id
+                            ? "Approving…"
+                            : "Approve"}
+                        </button>
+                      </td>
+                    </>
+                  ) : null}
+                  {variant === "successful" ? (
+                    <>
+                      <td className="px-4 py-3">
+                        <div
+                          className={`mb-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                            submission.paymentValidated
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {submission.paymentValidated ? "Validated" : "Pending"}
+                        </div>
+                        <div className="inline-flex items-center gap-3">
+                          <span className="text-xs text-slate-500">
+                            {submission.paymentValidated ? "On" : "Off"}
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={submission.paymentValidated}
+                            onClick={() =>
+                              void handleTogglePaymentValidation(submission)
+                            }
+                            disabled={updatingPaymentId === submission.id}
+                            className={`relative inline-flex h-6 w-12 items-center rounded-full transition ${
+                              submission.paymentValidated
+                                ? "bg-emerald-500"
+                                : "bg-slate-300"
+                            } ${
+                              updatingPaymentId === submission.id
+                                ? "opacity-60"
+                                : "hover:brightness-110"
+                            }`}
+                          >
+                            <span
+                              className={`absolute left-1 inline-flex h-4 w-4 transform items-center justify-center rounded-full bg-white text-[10px] font-semibold text-slate-600 transition ${
+                                submission.paymentValidated ? "translate-x-6" : ""
+                              }`}
+                            >
+                              {updatingPaymentId === submission.id ? "…" : ""}
+                            </span>
+                            <span className="sr-only">Toggle payment validated</span>
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(submission)}
+                          disabled={deletingId === submission.id}
+                          className="inline-flex items-center justify-center gap-2 rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white shadow hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:bg-red-300"
+                        >
+                          {deletingId === submission.id ? "Removing…" : "Remove"}
+                        </button>
+                      </td>
+                    </>
+                  ) : null}
                 </tr>
               ))
             )}

@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { REGISTRATION_LIMIT } from "@/lib/constants";
 
 const playerOptions = [
   { label: "Batsman", value: "batsman" },
@@ -32,6 +33,93 @@ export default function Home() {
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [capacityMessage, setCapacityMessage] = useState("");
+  const [isCheckingCapacity, setIsCheckingCapacity] = useState(true);
+  const [isRegistrationClosed, setIsRegistrationClosed] = useState(false);
+  const [capacity, setCapacity] = useState({
+    total: 0,
+    limit: REGISTRATION_LIMIT,
+    available: REGISTRATION_LIMIT,
+  });
+
+  const fetchCapacityStatus = useCallback(async () => {
+    const response = await fetch("/api/register/status");
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload) {
+      const message =
+        payload?.error ??
+        `Unable to check registration capacity (HTTP ${response.status}).`;
+      throw new Error(message);
+    }
+    return payload;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function loadCapacity() {
+      setIsCheckingCapacity(true);
+      try {
+        const payload = await fetchCapacityStatus();
+        if (!active) return;
+        const limit = payload.limit ?? REGISTRATION_LIMIT;
+        const total = payload.total ?? 0;
+        const available =
+          payload.available ?? Math.max(limit - total, 0);
+        setCapacity({ total, limit, available });
+        setIsRegistrationClosed(!payload.open);
+        setCapacityMessage(
+          payload.open
+            ? ""
+            : `Registrations are closed. We've reached our ${limit} player limit.`,
+        );
+      } catch (capacityError) {
+        if (!active) return;
+        setCapacityMessage(
+          capacityError instanceof Error
+            ? capacityError.message
+            : "Unable to check registration capacity. Please try again later.",
+        );
+      } finally {
+        if (active) {
+          setIsCheckingCapacity(false);
+        }
+      }
+    }
+    void loadCapacity();
+    return () => {
+      active = false;
+    };
+  }, [fetchCapacityStatus]);
+
+  async function handleShowForm() {
+    setError("");
+    setCapacityMessage("");
+    setIsCheckingCapacity(true);
+    try {
+      const payload = await fetchCapacityStatus();
+      const limit = payload.limit ?? REGISTRATION_LIMIT;
+      const total = payload.total ?? 0;
+      const available = payload.available ?? Math.max(limit - total, 0);
+      setCapacity({ total, limit, available });
+      setIsRegistrationClosed(!payload.open);
+      if (!payload.open) {
+        setShowForm(false);
+        setCapacityMessage(
+          `Registrations are closed. We've reached our ${limit} player limit.`,
+        );
+        return;
+      }
+      setShowForm(true);
+    } catch (capacityError) {
+      setCapacityMessage(
+        capacityError instanceof Error
+          ? capacityError.message
+          : "Unable to check registration capacity. Please try again later.",
+      );
+    } finally {
+      setIsCheckingCapacity(false);
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -72,6 +160,30 @@ export default function Home() {
       const payload = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+          setShowForm(false);
+          try {
+            const status = await fetchCapacityStatus();
+            const limit = status.limit ?? REGISTRATION_LIMIT;
+            const total = status.total ?? 0;
+            const available =
+              status.available ?? Math.max(limit - total, 0);
+            setCapacity({ total, limit, available });
+            setIsRegistrationClosed(!status.open);
+            setCapacityMessage(
+              status.open
+                ? ""
+                : `Registrations are closed. We've reached our ${limit} player limit.`,
+            );
+          } catch (statusError) {
+            setIsRegistrationClosed(true);
+            setCapacityMessage(
+              statusError instanceof Error
+                ? statusError.message
+                : "Registrations are closed.",
+            );
+          }
+        }
         throw new Error(payload.error || "Unable to submit form.");
       }
 
@@ -88,6 +200,49 @@ export default function Home() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  const closedScreenMessage =
+    capacityMessage ||
+    `Registrations are closed. We've reached our ${capacity.limit} player limit.`;
+  const shouldShowClosedScreen =
+    !isCheckingCapacity && isRegistrationClosed && !showForm;
+
+  if (shouldShowClosedScreen) {
+    return (
+      <div className="min-h-screen bg-slate-100 py-10">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 rounded-3xl bg-white p-6 shadow-lg md:p-12">
+          <header className="flex flex-col items-center gap-6 text-center">
+            <Image
+              src="/sspl-2026.png"
+              alt="SSPL Season 2026 logo"
+              width={160}
+              height={160}
+              className="h-24 w-24 md:h-28 md:w-28"
+              priority
+            />
+            <h1 className="text-3xl font-bold text-slate-900 md:text-4xl">
+              SSPL Season 2026 Registration
+            </h1>
+            <p className="max-w-2xl text-base text-slate-600 md:text-lg">
+              Thank you for your overwhelming response to SSPL Season 2026. We&apos;ve
+              filled every available roster spot.
+            </p>
+          </header>
+
+          <section className="rounded-3xl border border-red-200 bg-red-50 p-8 text-center shadow-inner">
+            <h2 className="text-2xl font-semibold text-red-700">
+              Registrations Are Now Closed
+            </h2>
+            <p className="mt-3 text-sm text-red-700/80">{closedScreenMessage}</p>
+            <p className="mt-6 text-sm text-slate-600">
+              If you were unable to register in time, please stay tuned for future seasons
+              and announcements from the SSPL committee.
+            </p>
+          </section>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -128,23 +283,41 @@ export default function Home() {
             UPI ID: <span className="font-semibold">adi.kuveskar1988@okicici</span>{" "}
             · Amount: <span className="font-semibold">₹900</span>
           </p>
+          <p className="text-xs text-slate-500">
+            Spots remaining:{" "}
+            {isCheckingCapacity
+              ? "Checking availability…"
+              : `${capacity.available} of ${capacity.limit}`}
+          </p>
+          {capacityMessage ? (
+            <p className="text-sm font-medium text-red-600">{capacityMessage}</p>
+          ) : null}
           <ol className="list-decimal space-y-2 text-left text-sm text-slate-600">
             <li>Scan the QR code using Google Pay, PhonePe, Paytm, or any UPI app.</li>
             <li>Confirm that the amount is ₹900 before completing the payment.</li>
             <li>
-              After paying, capture a clear screenshot showing the transaction status and
-              amount. You will need to upload this screenshot in the registration form.
+              After paying, capture a clear screenshot showing the transaction status,
+              amount, UTR/reference ID, payee name, and other transaction details. You
+              will need to upload this screenshot in the registration form.
             </li>
           </ol>
-          {!showForm && (
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="rounded-full bg-emerald-600 px-6 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-            >
-              I&apos;ve paid and I&apos;m ready to register
-            </button>
-          )}
+          {!showForm &&
+            (isRegistrationClosed ? (
+              <p className="rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
+                Registrations are closed.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleShowForm()}
+                disabled={isCheckingCapacity}
+                className="rounded-full bg-emerald-600 px-6 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {isCheckingCapacity
+                  ? "Checking availability…"
+                  : "I've paid and I'm ready to register"}
+              </button>
+            ))}
         </section>
 
         {showForm && (
