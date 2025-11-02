@@ -75,7 +75,7 @@ function buildExportRows(submissions, variant) {
     "Entry Type": variant === "failed" ? "Failed" : "Successful",
     "Payment Verified":
       submission.ocrPaymentDetected === true
-        ? "Yes"
+        ? `Yes (${submission.ocrMatchedAmount ?? "unknown"})`
         : submission.ocrPaymentDetected === false
           ? "No"
           : "Unknown",
@@ -84,11 +84,6 @@ function buildExportRows(submissions, variant) {
       : "",
     "OCR Reasons": Array.isArray(submission.ocrValidationReasons)
       ? submission.ocrValidationReasons.join(", ")
-      : "",
-    "Secondary Amounts Detected": Array.isArray(
-      submission.ocrSecondaryAmounts,
-    )
-      ? submission.ocrSecondaryAmounts.join(", ")
       : "",
     "OCR Text": submission.ocrText ?? "",
     "Failure Reason": submission.failureReason ?? "",
@@ -188,7 +183,7 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
       text: submission.ocrText || "No OCR text was saved with this submission.",
       amounts: submission.ocrCandidateAmounts ?? [],
       reasons: submission.ocrValidationReasons ?? [],
-      secondary: submission.ocrSecondaryAmounts ?? [],
+      matchedAmount: submission.ocrMatchedAmount ?? null,
     });
   }
 
@@ -323,12 +318,15 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
                       Matched rules: {modal.reasons.join(", ")}
                     </div>
                   )}
-                  {Array.isArray(modal.secondary) &&
-                    modal.secondary.length > 0 && (
-                      <div className="text-xs text-amber-600">
-                        Secondary amounts detected: {modal.secondary.join(", ")}
-                      </div>
-                    )}
+                  {modal.matchedAmount ? (
+                    <div className="text-xs font-semibold text-emerald-600">
+                      Verified amount: ₹{modal.matchedAmount}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-amber-600">
+                      No qualifying amount detected.
+                    </div>
+                  )}
                   <pre className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm text-slate-700 shadow-inner">
                     {modal.text}
                   </pre>
@@ -483,13 +481,11 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
                         No OCR text
                       </div>
                     )}
-                    {Array.isArray(submission.ocrSecondaryAmounts) &&
-                      submission.ocrSecondaryAmounts.length > 0 && (
-                        <div className="mt-1 text-xs text-amber-600">
-                          Secondary amounts:{" "}
-                          {submission.ocrSecondaryAmounts.join(", ")}
-                        </div>
-                      )}
+                    {submission.ocrMatchedAmount ? (
+                      <div className="mt-1 text-xs font-semibold text-emerald-600">
+                        Verified amount: ₹{submission.ocrMatchedAmount}
+                      </div>
+                    ) : null}
                   </td>
                   {variant === "failed" && (
                     <td className="px-4 py-3">

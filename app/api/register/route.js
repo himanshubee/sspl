@@ -327,7 +327,7 @@ export async function POST(request) {
           ocrPaymentDetected: false,
           ocrCandidateAmounts: validationSummary.amounts,
           ocrValidationReasons: validationSummary.reasons,
-          ocrSecondaryAmounts: validationSummary.secondaryAmounts,
+          ocrMatchedAmount: validationSummary.matchedAmount ?? null,
           failureReason: "payment_validation_failed",
           failureMessage:
             "OCR validation could not confirm the ₹900 payment amount.",
@@ -391,7 +391,7 @@ export async function POST(request) {
       ocrPaymentDetected: validationSummary.matched,
       ocrCandidateAmounts: validationSummary.amounts,
       ocrValidationReasons: validationSummary.reasons,
-      ocrSecondaryAmounts: validationSummary.secondaryAmounts,
+      ocrMatchedAmount: validationSummary.matchedAmount ?? null,
     };
 
     await addSubmission(submission);
