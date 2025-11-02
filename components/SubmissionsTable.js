@@ -33,8 +33,28 @@ function formatTimestamp(timestamp) {
   return date.toISOString().replace("T", " ").replace("Z", " UTC");
 }
 
+const publicStorageBaseUrl =
+  process.env.NEXT_PUBLIC_STORAGE_BASE_URL ??
+  process.env.NEXT_PUBLIC_B2_PUBLIC_BASE_URL ??
+  null;
+
+function buildPublicObjectUrl(key) {
+  if (!publicStorageBaseUrl || !key) return null;
+  try {
+    const normalizedBase = publicStorageBaseUrl.endsWith("/")
+      ? publicStorageBaseUrl
+      : `${publicStorageBaseUrl}/`;
+    const normalizedKey = key.replace(/^\/+/, "");
+    return new URL(normalizedKey, normalizedBase).toString();
+  } catch {
+    return null;
+  }
+}
+
 function resolveDownloadUrl(url) {
   if (!url) return "";
+  const directUrl = buildPublicObjectUrl(url);
+  if (directUrl) return directUrl;
   try {
     return new URL(url, window.location.origin).href;
   } catch {
@@ -73,19 +93,6 @@ function buildExportRows(submissions, variant) {
         "",
     ),
     "Entry Type": variant === "failed" ? "Failed" : "Successful",
-    "Payment Verified":
-      submission.ocrPaymentDetected === true
-        ? `Yes (${submission.ocrMatchedAmount ?? "unknown"})`
-        : submission.ocrPaymentDetected === false
-          ? "No"
-          : "Unknown",
-    "OCR Candidate Amounts": Array.isArray(submission.ocrCandidateAmounts)
-      ? submission.ocrCandidateAmounts.join(", ")
-      : "",
-    "OCR Reasons": Array.isArray(submission.ocrValidationReasons)
-      ? submission.ocrValidationReasons.join(", ")
-      : "",
-    "OCR Text": submission.ocrText ?? "",
     "Failure Reason": submission.failureReason ?? "",
     "Failure Message": submission.failureMessage ?? "",
     "Submission ID": submission.id,
@@ -97,6 +104,11 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
   const [isDownloading, setIsDownloading] = useState(false);
 
   async function fetchSignedAttachment(key) {
+    const directUrl = buildPublicObjectUrl(key);
+    if (directUrl) {
+      return directUrl;
+    }
+
     const response = await fetch(
       `/api/admin/signed-url?key=${encodeURIComponent(key)}`,
     );
@@ -173,18 +185,6 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
         error: "Unable to load the attachment. Please try again.",
       });
     }
-  }
-
-  function handleViewOcr(submission) {
-    setModal({
-      type: "text",
-      title: "OCR Extract",
-      submission,
-      text: submission.ocrText || "No OCR text was saved with this submission.",
-      amounts: submission.ocrCandidateAmounts ?? [],
-      reasons: submission.ocrValidationReasons ?? [],
-      matchedAmount: submission.ocrMatchedAmount ?? null,
-    });
   }
 
   async function handleDownload() {
@@ -282,56 +282,25 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
                   {new Date(modal.submission.createdAt).toLocaleString()}
                 </span>
               </div>
-              {modal.type === "image" ? (
-                <figure className="flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  {modal.loading ? (
-                    <div className="flex h-64 w-full items-center justify-center text-sm text-slate-500">
-                      Loading attachment…
-                    </div>
-                  ) : modal.error ? (
-                    <div className="flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600">
-                      {modal.error}
-                    </div>
-                  ) : (
-                    <Image
-                      src={modal.url}
-                      alt={modal.title}
-                      width={800}
-                      height={800}
-                      className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
-                    />
-                  )}
-                </figure>
-              ) : (
-                <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-sm text-slate-600">
-                    {Array.isArray(modal.amounts) && modal.amounts.length > 0 ? (
-                      <span>
-                        Candidate amounts detected: {modal.amounts.join(", ")}
-                      </span>
-                    ) : (
-                      <span>No numeric amounts detected during OCR.</span>
-                    )}
+              <figure className="flex flex-col items-center justify-center overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
+                {modal.loading ? (
+                  <div className="flex h-64 w-full items-center justify-center text-sm text-slate-500">
+                    Loading attachment…
                   </div>
-                  {Array.isArray(modal.reasons) && modal.reasons.length > 0 && (
-                    <div className="text-xs font-medium uppercase tracking-wide text-emerald-700">
-                      Matched rules: {modal.reasons.join(", ")}
-                    </div>
-                  )}
-                  {modal.matchedAmount ? (
-                    <div className="text-xs font-semibold text-emerald-600">
-                      Verified amount: ₹{modal.matchedAmount}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-amber-600">
-                      No qualifying amount detected.
-                    </div>
-                  )}
-                  <pre className="whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm text-slate-700 shadow-inner">
-                    {modal.text}
-                  </pre>
-                </div>
-              )}
+                ) : modal.error ? (
+                  <div className="flex h-64 w-full items-center justify-center px-6 text-center text-sm text-red-600">
+                    {modal.error}
+                  </div>
+                ) : (
+                  <Image
+                    src={modal.url}
+                    alt={modal.title}
+                    width={800}
+                    height={800}
+                    className="h-auto w-full max-h-[70vh] rounded-lg object-contain"
+                  />
+                )}
+              </figure>
             </div>
           </div>
         </div>
@@ -369,7 +338,6 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
               <th className="px-4 py-3">Food</th>
               <th className="px-4 py-3">Photo</th>
               <th className="px-4 py-3">Payment</th>
-              <th className="px-4 py-3">Payment OCR</th>
               {variant === "failed" && (
                 <th className="px-4 py-3">Failure Reason</th>
               )}
@@ -380,7 +348,7 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
               <tr>
                 <td
                   className="px-4 py-6 text-center text-slate-500"
-                  colSpan={variant === "failed" ? 11 : 10}
+                  colSpan={variant === "failed" ? 10 : 9}
                 >
                   No submissions yet. Registrations will appear here once
                   players complete the form.
@@ -447,45 +415,6 @@ export default function SubmissionsTable({ submissions, variant = "successful" }
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="text-sm">
-                      {submission.ocrPaymentDetected === true ? (
-                        <span className="font-semibold text-emerald-600">
-                          Verified
-                        </span>
-                      ) : submission.ocrPaymentDetected === false ? (
-                        <span className="font-semibold text-amber-600">
-                          Needs review
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">Unknown</span>
-                      )}
-                    </div>
-                    {Array.isArray(submission.ocrValidationReasons) &&
-                      submission.ocrValidationReasons.length > 0 && (
-                        <div className="text-xs text-slate-500">
-                          {submission.ocrValidationReasons.join(", ")}
-                        </div>
-                      )}
-                    {submission.ocrText ? (
-                      <button
-                        type="button"
-                        onClick={() => handleViewOcr(submission)}
-                        className="mt-1 text-xs font-medium text-emerald-600 hover:text-emerald-500"
-                      >
-                        View OCR text
-                      </button>
-                    ) : (
-                      <div className="mt-1 text-xs text-slate-400">
-                        No OCR text
-                      </div>
-                    )}
-                    {submission.ocrMatchedAmount ? (
-                      <div className="mt-1 text-xs font-semibold text-emerald-600">
-                        Verified amount: ₹{submission.ocrMatchedAmount}
-                      </div>
-                    ) : null}
                   </td>
                   {variant === "failed" && (
                     <td className="px-4 py-3">
