@@ -1,6 +1,6 @@
 import Image from "next/image";
 import LogoutButton from "@/components/LogoutButton";
-import SubmissionsTable from "@/components/SubmissionsTable";
+import AdminDashboardView from "@/components/AdminDashboardView";
 import { readFailedSubmissions, readSubmissions } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -36,20 +36,10 @@ export default async function AdminDashboard() {
           <LogoutButton />
         </header>
 
-        <SubmissionsTable submissions={submissions} variant="successful" />
-
-        <div className="space-y-4 border-t border-slate-200 pt-6">
-          <div>
-            <h2 className="text-2xl font-semibold text-slate-900">
-              Failed Submissions
-            </h2>
-            <p className="text-sm text-slate-500">
-              Attempts that did not pass automated payment validation. Review
-              details to follow up with the registrant.
-            </p>
-          </div>
-          <SubmissionsTable submissions={failedSubmissions} variant="failed" />
-        </div>
+        <AdminDashboardView
+          submissions={submissions}
+          failedSubmissions={failedSubmissions}
+        />
       </div>
     </div>
   );
